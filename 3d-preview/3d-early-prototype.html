@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no">
+<title>MIDI Visualizer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  cursor: grab;
+}
+body.grabbed { cursor: grabbing; }
+body.uploading { cursor: default; }
+
+#upload-screen {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 100;
+  background: #000;
+  transition: opacity 0.8s, visibility 0.8s;
+}
+#upload-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+#drop-zone {
+  width: 420px; max-width: 90vw;
+  padding: 60px 40px;
+  border: 2px dashed rgba(255,255,255,0.2);
+  border-radius: 16px;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s;
+}
+#drop-zone.dragover {
+  border-color: #00B1FC;
+  background: rgba(0,177,252,0.05);
+}
+#drop-zone h1 {
+  font-size: 24px; font-weight: 600;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+#drop-zone p {
+  color: rgba(255,255,255,0.4);
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+.file-row {
+  display: flex; gap: 10px;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.file-btn {
+  padding: 10px 20px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.file-btn:hover { background: rgba(255,255,255,0.12); }
+.file-btn.loaded { border-color: #21EB95; color: #21EB95; }
+.file-btn input { display: none; }
+#file-status {
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.35);
+  min-height: 18px;
+}
+#go-btn {
+  margin-top: 20px;
+  padding: 12px 40px;
+  background: #00B1FC;
+  border: none; border-radius: 8px;
+  color: #fff; font-size: 16px; font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+  opacity: 0.3;
+  pointer-events: none;
+}
+#go-btn.ready { opacity: 1; pointer-events: auto; }
+#go-btn.ready:hover { transform: scale(1.05); }
+
+#canvas-container {
+  position: fixed; inset: 0;
+  z-index: 1;
+}
+canvas { display: block; }
+
+#playbar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  z-index: 50;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 10px 16px 14px;
+  display: none;
+  align-items: center;
+  gap: 12px;
+}
+#playbar.visible { display: flex; }
+
+#play-pause {
+  width: 36px; height: 36px;
+  background: none; border: none;
+  color: #fff; font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+#play-pause:hover { color: #00B1FC; }
+
+.time {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 38px;
+}
+
+#progress-wrap {
+  flex: 1;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+#progress-track {
+  width: 100%; height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+  position: relative;
+  overflow: visible;
+}
+#progress-bar {
+  height: 100%;
+  background: #00B1FC;
+  border-radius: 2px;
+  width: 0%;
+  position: relative;
+}
+#progress-handle {
+  position: absolute;
+  right: -6px; top: -4px;
+  width: 12px; height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+#progress-wrap:hover #progress-handle { opacity: 1; }
+
+#audio-mode {
+  padding: 5px 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#audio-mode:hover { background: rgba(255,255,255,0.12); }
+
+#cam-presets {
+  position: fixed; top: 12px; right: 12px;
+  z-index: 50;
+  display: none;
+  gap: 6px;
+}
+#cam-presets.visible { display: flex; }
+.cam-btn {
+  width: 30px; height: 30px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: #fff; font-size: 13px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.cam-btn:hover { background: rgba(255,255,255,0.15); }
+
+#loading {
+  position: fixed; inset: 0;
+  z-index: 200;
+  background: rgba(0,0,0,0.95);
+  display: none;
+  align-items: center; justify-content: center;
+  font-size: 18px;
+  color: rgba(255,255,255,0.5);
+}
+#loading.visible { display: flex; }
+</style>
+</head>
+<body class="uploading">
+
+<div id="upload-screen">
+  <div id="drop-zone">
+    <h1>MIDI Visualizer</h1>
+    <p>Every note, visualized.</p>
+    <div class="file-row">
+      <label class="file-btn" id="midi-btn">
+        Choose MIDI
+        <input type="file" id="midi-input" accept=".mid,.midi">
+      </label>
+      <label class="file-btn" id="mp3-btn">
+        MP3 (optional)
+        <input type="file" id="mp3-input" accept="audio/*">
+      </label>
+    </div>
+    <div id="file-status">Drop a .mid file anywhere</div>
+    <button id="go-btn">Launch</button>
+  </div>
+</div>
+
+<div id="canvas-container"></div>
+
+<div id="cam-presets">
+  <button class="cam-btn" data-preset="0">1</button>
+  <button class="cam-btn" data-preset="1">2</button>
+  <button class="cam-btn" data-preset="2">3</button>
+  <button class="cam-btn" data-preset="3">4</button>
+</div>
+
+<div id="playbar">
+  <button id="play-pause">&#9654;</button>
+  <span class="time" id="time-current">0:00</span>
+  <div id="progress-wrap">
+    <div id="progress-track">
+      <div id="progress-bar">
+        <div id="progress-handle"></div>
+      </div>
+    </div>
+  </div>
+  <span class="time" id="time-total">0:00</span>
+  <button id="audio-mode">SYNTH</button>
+</div>
+
+<div id="loading">Loading...</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "@tonejs/midi": "https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { Midi } from '@tonejs/midi';
+// Tone.js no longer needed — using raw Web Audio API for synth
+
+// ── State ──
+let midiData = null;
+let mp3Url = null;
+let allNotes = [];
+let totalDuration = 0;
+let playing = false;
+let playbackTime = 0;
+let lastFrameTime = 0;
+let useMP3 = false;
+let audioElement = null;
+// synth state managed by Web Audio engine below
+let scene, camera, renderer, composer;
+let noteMeshes = [];
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
+// Orbit camera: spherical coords around a lookAt point
+let orbitTarget = { theta: 0.3, phi: 1.35, radius: 280 }; // theta=azimuth, phi=polar
+let orbit = { theta: 0.3, phi: 1.35, radius: 280 };
+let lookAtTarget = { x: 0, y: 0, z: 0 };
+let lookAtPos = { x: 0, y: 0, z: 0 };
+let cursorLine = null;
+let particleSystem = null;
+let particlePositions, particleColors, particleAlphas;
+let trackCount = 0;
+let midPitch = 64;
+let minPitch = 127, maxPitch = 0;
+
+const PPS = 80;            // pixels per second (X axis)
+const PITCH_SCALE = 3.0;   // Y axis spread
+const TRACK_DEPTH = 25;    // Z spacing between tracks
+const NOTE_HEIGHT = 2.2;
+const NOTE_DEPTH = 12;     // Z thickness of each note block
+
+// ── Track colors — saturated for bloom ──
+const TRACK_COLORS = [
+  0xFF00FF, 0xFF6600, 0xFFEE00, 0x21EB95,
+  0x00B1FC, 0xFF2266, 0xBB44FF, 0x00FFCC,
+  0xFF8800, 0x4488FF, 0xFFCC00, 0x66FF44,
+  0xFF0088, 0x6644FF, 0x00FF88, 0xFF8844,
+];
+
+// ── DOM ──
+const uploadScreen = document.getElementById('upload-screen');
+const dropZone = document.getElementById('drop-zone');
+const midiInput = document.getElementById('midi-input');
+const mp3Input = document.getElementById('mp3-input');
+const midiBtnEl = document.getElementById('midi-btn');
+const mp3BtnEl = document.getElementById('mp3-btn');
+const fileStatus = document.getElementById('file-status');
+const goBtn = document.getElementById('go-btn');
+const playbar = document.getElementById('playbar');
+const playPauseBtn = document.getElementById('play-pause');
+const timeCurrent = document.getElementById('time-current');
+const timeTotal = document.getElementById('time-total');
+const progressWrap = document.getElementById('progress-wrap');
+const progressBar = document.getElementById('progress-bar');
+const audioModeBtn = document.getElementById('audio-mode');
+const camPresets = document.getElementById('cam-presets');
+const loadingEl = document.getElementById('loading');
+const canvasContainer = document.getElementById('canvas-container');
+
+// ── File handling ──
+function handleMidiFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      midiData = new Midi(e.target.result);
+      midiBtnEl.classList.add('loaded');
+      midiBtnEl.childNodes[0].textContent = file.name.slice(0, 20);
+      fileStatus.textContent = `${midiData.tracks.length} tracks, ${midiData.tracks.reduce((s, t) => s + t.notes.length, 0)} notes`;
+      goBtn.classList.add('ready');
+    } catch (err) {
+      fileStatus.textContent = 'Error parsing MIDI file';
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function handleMP3File(file) {
+  if (!file) return;
+  mp3Url = URL.createObjectURL(file);
+  mp3BtnEl.classList.add('loaded');
+  mp3BtnEl.childNodes[0].textContent = file.name.slice(0, 20);
+}
+
+midiInput.addEventListener('change', (e) => handleMidiFile(e.target.files[0]));
+mp3Input.addEventListener('change', (e) => handleMP3File(e.target.files[0]));
+
+document.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+document.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  for (const file of e.dataTransfer.files) {
+    if (file.name.match(/\.(mid|midi)$/i)) handleMidiFile(file);
+    else if (file.type.startsWith('audio/')) handleMP3File(file);
+  }
+});
+
+goBtn.addEventListener('click', () => {
+  if (!midiData) return;
+  uploadScreen.classList.add('hidden');
+  document.body.classList.remove('uploading');
+  loadingEl.classList.add('visible');
+  requestAnimationFrame(() => requestAnimationFrame(() => buildScene()));
+});
+
+// ══════════════════════════════════════════
+// ── BUILD 3D SCENE ──
+// ══════════════════════════════════════════
+function buildScene() {
+  // ── Extract notes ──
+  allNotes = [];
+  totalDuration = 0;
+  const tracksWithNotes = [];
+  midiData.tracks.forEach((track, ti) => {
+    if (track.notes.length === 0) return;
+    tracksWithNotes.push(ti);
+    track.notes.forEach((note) => {
+      allNotes.push({
+        time: note.time,
+        duration: note.duration,
+        midi: note.midi,
+        velocity: note.velocity,
+        track: ti,
+        name: note.name,
+      });
+      const end = note.time + note.duration;
+      if (end > totalDuration) totalDuration = end;
+    });
+  });
+  totalDuration += 2;
+  trackCount = tracksWithNotes.length;
+
+  // Map original track indices to sequential Z layers
+  const trackToLayer = new Map();
+  tracksWithNotes.forEach((ti, i) => trackToLayer.set(ti, i));
+
+  // Pitch range
+  minPitch = 127; maxPitch = 0;
+  allNotes.forEach(n => {
+    if (n.midi < minPitch) minPitch = n.midi;
+    if (n.midi > maxPitch) maxPitch = n.midi;
+  });
+  midPitch = (minPitch + maxPitch) / 2;
+
+  // ── Three.js setup ──
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000000);
+
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 50000);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  canvasContainer.appendChild(renderer.domElement);
+
+  // ── Post-processing: Bloom ──
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    1.2,   // strength
+    0.5,   // radius
+    0.15   // threshold — low so only HDR-boosted active notes trigger bloom
+  );
+  composer.addPass(bloomPass);
+
+  // Chromatic aberration / vignette shader
+  const vignetteShader = {
+    uniforms: {
+      tDiffuse: { value: null },
+      intensity: { value: 0.4 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D tDiffuse;
+      uniform float intensity;
+      varying vec2 vUv;
+      void main() {
+        vec2 uv = vUv;
+        vec2 center = uv - 0.5;
+        float dist = length(center);
+
+        // Chromatic aberration
+        float aberration = dist * 0.003;
+        float r = texture2D(tDiffuse, uv + center * aberration).r;
+        float g = texture2D(tDiffuse, uv).g;
+        float b = texture2D(tDiffuse, uv - center * aberration).b;
+
+        // Vignette
+        float vignette = 1.0 - dist * dist * intensity;
+
+        gl_FragColor = vec4(vec3(r, g, b) * vignette, 1.0);
+      }
+    `,
+  };
+  composer.addPass(new ShaderPass(vignetteShader));
+
+  // ── Lights ──
+  scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+  dirLight.position.set(200, 300, 400);
+  scene.add(dirLight);
+  const backLight = new THREE.DirectionalLight(0x4466ff, 0.3);
+  backLight.position.set(-100, -100, -200);
+  scene.add(backLight);
+
+  // ── Fog — very subtle, only clips extreme distances ──
+  scene.fog = new THREE.FogExp2(0x000000, 0.00015);
+
+  // ══════════════════════════════════════
+  // ── NOTE BLOCKS (instanced per track) ──
+  // ══════════════════════════════════════
+  const notesByTrack = new Map();
+  allNotes.forEach((n) => {
+    if (!notesByTrack.has(n.track)) notesByTrack.set(n.track, []);
+    notesByTrack.get(n.track).push(n);
+  });
+
+  // Rounded-edge box via beveled geometry for more visual interest
+  const baseGeo = new THREE.BoxGeometry(1, 1, 1, 1, 1, 1);
+
+  noteMeshes = [];
+
+  notesByTrack.forEach((notes, trackIdx) => {
+    const layer = trackToLayer.get(trackIdx);
+    const color = new THREE.Color(TRACK_COLORS[layer % TRACK_COLORS.length]);
+    const zPos = (layer - (trackCount - 1) / 2) * TRACK_DEPTH;
+
+    // Emissive material — notes glow through bloom
+    const mat = new THREE.MeshStandardMaterial({
+      color: color.clone().multiplyScalar(0.6),
+      emissive: color,
+      emissiveIntensity: 0.35,
+      metalness: 0.3,
+      roughness: 0.4,
+      transparent: true,
+      opacity: 0.9,
+    });
+
+    const instMesh = new THREE.InstancedMesh(baseGeo, mat, notes.length);
+    instMesh.userData = { trackIdx, layer, notes, zPos };
+    const dummy = new THREE.Object3D();
+    const colorAttr = new THREE.InstancedBufferAttribute(new Float32Array(notes.length * 3), 3);
+
+    notes.forEach((n, i) => {
+      const x = n.time * PPS;
+      const y = (n.midi - midPitch) * PITCH_SCALE;
+      const w = Math.max(n.duration * PPS, 2.5);
+
+      dummy.position.set(x + w / 2, y, zPos);
+      dummy.scale.set(w, NOTE_HEIGHT, NOTE_DEPTH);
+      dummy.updateMatrix();
+      instMesh.setMatrixAt(i, dummy.matrix);
+
+      const v = 0.15 + n.velocity * 0.25; // dim base — active notes pop by contrast
+      colorAttr.setXYZ(i, color.r * v, color.g * v, color.b * v);
+
+      n.instMesh = instMesh;
+      n.instIndex = i;
+      n.layer = layer;
+      n.zPos = zPos;
+      n.baseColor = { r: color.r * v, g: color.g * v, b: color.b * v };
+      // Pre-compute luminance for equal perceived glow across all colors
+      const lum = color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
+      n.glowScale = lum > 0 ? 0.5 / lum : 1.0; // normalize so all colors bloom equally
+    });
+
+    instMesh.instanceColor = colorAttr;
+    instMesh.instanceMatrix.needsUpdate = true;
+    scene.add(instMesh);
+    noteMeshes.push(instMesh);
+  });
+
+  // ══════════════════════════════════════
+  // ── CURSOR PLANE (Y-Z, fades smoothly at Z edges, very subtle) ──
+  // ══════════════════════════════════════
+  const cursorHeight = (maxPitch - minPitch + 24) * PITCH_SCALE;
+  const cursorZSpan = (trackCount + 2) * TRACK_DEPTH;
+
+  // Use UV-based fade in the fragment shader — no vertex subdivision artifacts
+  const cursorGeo = new THREE.PlaneGeometry(cursorZSpan, cursorHeight, 1, 1);
+
+  const cursorMat = new THREE.ShaderMaterial({
+    uniforms: {
+      color: { value: new THREE.Color(0x8888aa) },
+      baseOpacity: { value: 0.056 },               // ~40% stronger
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 color;
+      uniform float baseOpacity;
+      varying vec2 vUv;
+      void main() {
+        // vUv.x goes 0..1 across the Z span
+        // Smooth fade: full opacity in center 60%, smoothstep to 0 at edges
+        float zNorm = abs(vUv.x - 0.5) * 2.0; // 0 at center, 1 at edges
+        float fade = smoothstep(1.0, 0.3, zNorm); // smooth from edge(1) to center(0.3)
+        gl_FragColor = vec4(color, baseOpacity * fade);
+      }
+    `,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  });
+  cursorLine = new THREE.Mesh(cursorGeo, cursorMat);
+  cursorLine.rotation.y = Math.PI / 2;
+  cursorLine.position.set(0, 0, 0);
+  scene.add(cursorLine);
+
+  // Thin bright center line — also UV-faded, very dim so bloom doesn't blow out
+  const cursorGlowGeo = new THREE.PlaneGeometry(cursorZSpan, cursorHeight, 1, 1);
+  const cursorGlowMat = new THREE.ShaderMaterial({
+    uniforms: {
+      color: { value: new THREE.Color(0xaaaacc) },
+      baseOpacity: { value: 0.1 },                 // ~40% stronger
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 color;
+      uniform float baseOpacity;
+      varying vec2 vUv;
+      void main() {
+        float zNorm = abs(vUv.x - 0.5) * 2.0;
+        float fade = smoothstep(1.0, 0.2, zNorm);
+        gl_FragColor = vec4(color, baseOpacity * fade);
+      }
+    `,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  });
+  const cursorGlow = new THREE.Mesh(cursorGlowGeo, cursorGlowMat);
+  cursorGlow.position.set(0, 0, 0.1);
+  cursorLine.add(cursorGlow);
+
+  // ══════════════════════════════════════
+  // ── PARTICLE SYSTEM (sparks on active notes) ──
+  // ══════════════════════════════════════
+  const MAX_PARTICLES = 4000;
+  const pGeo = new THREE.BufferGeometry();
+  particlePositions = new Float32Array(MAX_PARTICLES * 3);
+  particleColors = new Float32Array(MAX_PARTICLES * 3);
+  particleAlphas = new Float32Array(MAX_PARTICLES);
+  const particleSizes = new Float32Array(MAX_PARTICLES);
+
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    particlePositions[i * 3] = 0;
+    particlePositions[i * 3 + 1] = -9999; // offscreen
+    particlePositions[i * 3 + 2] = 0;
+    particleAlphas[i] = 0;
+    particleSizes[i] = Math.random() * 3 + 1;
+  }
+
+  pGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+  pGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+  pGeo.setAttribute('alpha', new THREE.BufferAttribute(particleAlphas, 1));
+  pGeo.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+
+  const particleMat = new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: `
+      attribute float alpha;
+      attribute float size;
+      varying float vAlpha;
+      varying vec3 vColor;
+      void main() {
+        vAlpha = alpha;
+        vColor = color;
+        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * (200.0 / -mvPos.z);
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `,
+    fragmentShader: `
+      varying float vAlpha;
+      varying vec3 vColor;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        if (d > 1.0) discard;
+        float glow = 1.0 - d * d;
+        gl_FragColor = vec4(vColor * 2.0, vAlpha * glow);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexColors: true,
+  });
+
+  particleSystem = new THREE.Points(pGeo, particleMat);
+  scene.add(particleSystem);
+
+  // ══════════════════════════════════════
+  // ── GRID / REFERENCE LINES ──
+  // ══════════════════════════════════════
+  // Octave lines per track layer
+  const gridMat = new THREE.LineBasicMaterial({ color: 0x222244, transparent: true, opacity: 0.3 });
+  for (let layer = 0; layer < trackCount; layer++) {
+    const zPos = (layer - (trackCount - 1) / 2) * TRACK_DEPTH;
+    for (let p = Math.floor(minPitch / 12) * 12; p <= maxPitch + 12; p += 12) {
+      const y = (p - midPitch) * PITCH_SCALE;
+      const pts = [
+        new THREE.Vector3(-PPS, y, zPos),
+        new THREE.Vector3(totalDuration * PPS + PPS, y, zPos)
+      ];
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMat));
+    }
+  }
+
+  // ── Background starfield ──
+  const starCount = 2000;
+  const starGeo = new THREE.BufferGeometry();
+  const starPos = new Float32Array(starCount * 3);
+  const starCol = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    starPos[i * 3] = (Math.random() - 0.5) * totalDuration * PPS * 2;
+    starPos[i * 3 + 1] = (Math.random() - 0.5) * 600;
+    starPos[i * 3 + 2] = (Math.random() - 0.5) * trackCount * TRACK_DEPTH * 4 - 200;
+    const b = Math.random() * 0.3 + 0.05;
+    starCol[i * 3] = b; starCol[i * 3 + 1] = b; starCol[i * 3 + 2] = b * 1.5;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  starGeo.setAttribute('color', new THREE.BufferAttribute(starCol, 3));
+  const starMat = new THREE.PointsMaterial({ size: 1.5, vertexColors: true, transparent: true, opacity: 0.8 });
+  scene.add(new THREE.Points(starGeo, starMat));
+
+  // ── Initial camera (orbit) ──
+  lookAtTarget = { x: PPS * 2, y: 0, z: 0 };
+  lookAtPos = { ...lookAtTarget };
+  orbitTarget = { theta: 0.15, phi: 1.4, radius: 280 };
+  orbit = { ...orbitTarget };
+
+  // ── Audio ──
+  if (mp3Url) {
+    useMP3 = true;
+    audioElement = new Audio(mp3Url);
+    audioElement.preload = 'auto';
+    audioModeBtn.textContent = 'MP3';
+  } else {
+    useMP3 = false;
+    audioModeBtn.textContent = 'SYNTH';
+  }
+
+  // ── Show UI ──
+  loadingEl.classList.remove('visible');
+  playbar.classList.add('visible');
+  camPresets.classList.add('visible');
+  timeTotal.textContent = formatTime(totalDuration);
+
+  setupControls();
+  lastFrameTime = performance.now();
+  animate();
+}
+
+// ══════════════════════════════════════════
+// ── CAMERA PRESETS ──
+// ══════════════════════════════════════════
+camPresets.querySelectorAll('.cam-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const presets = [
+      { theta: 0.15, phi: 1.4, radius: 280, xPct: 0 },    // front overview
+      { theta: 0.6, phi: 1.2, radius: 200, xPct: 0.5 },   // angled mid
+      { theta: -0.4, phi: 1.1, radius: 150, xPct: 0.25 },  // opposite angle close
+      { theta: 0.0, phi: 0.6, radius: 350, xPct: 0 },      // top-down wide
+    ];
+    const p = presets[parseInt(btn.dataset.preset)];
+    orbitTarget.theta = p.theta;
+    orbitTarget.phi = p.phi;
+    orbitTarget.radius = p.radius;
+    lookAtTarget.x = p.xPct * totalDuration * PPS;
+  });
+});
+
+// ══════════════════════════════════════════
+// ── CONTROLS ──
+// ══════════════════════════════════════════
+function setupControls() {
+  const el = renderer.domElement;
+
+  // Mouse: drag = orbit, shift+drag = pan lookAt, scroll = zoom
+  el.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    dragStart.x = e.clientX;
+    dragStart.y = e.clientY;
+    document.body.classList.add('grabbed');
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    if (e.shiftKey) {
+      // Pan the lookAt point
+      const scale = orbit.radius * 0.003;
+      lookAtTarget.x -= dx * scale;
+      lookAtTarget.y += dy * scale;
+    } else {
+      // Orbit rotation
+      orbitTarget.theta -= dx * 0.005;
+      orbitTarget.phi -= dy * 0.005;
+      orbitTarget.phi = Math.max(0.2, Math.min(Math.PI - 0.2, orbitTarget.phi));
+    }
+    dragStart.x = e.clientX;
+    dragStart.y = e.clientY;
+  });
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    document.body.classList.remove('grabbed');
+  });
+
+  // Touch: single = orbit, two-finger = pan
+  let touchId = null;
+  let touch2Id = null;
+  el.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1 && touchId === null) {
+      const t = e.touches[0];
+      touchId = t.identifier;
+      dragStart.x = t.clientX;
+      dragStart.y = t.clientY;
+      document.body.classList.add('grabbed');
+    } else if (e.touches.length === 2) {
+      touch2Id = e.touches[1].identifier;
+    }
+  });
+  el.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      // Two-finger pan
+      const t = e.touches[0];
+      const dx = t.clientX - dragStart.x;
+      const dy = t.clientY - dragStart.y;
+      const scale = orbit.radius * 0.003;
+      lookAtTarget.x -= dx * scale;
+      lookAtTarget.y += dy * scale;
+      dragStart.x = t.clientX;
+      dragStart.y = t.clientY;
+    } else {
+      for (const t of e.changedTouches) {
+        if (t.identifier !== touchId) continue;
+        const dx = t.clientX - dragStart.x;
+        const dy = t.clientY - dragStart.y;
+        orbitTarget.theta -= dx * 0.005;
+        orbitTarget.phi -= dy * 0.005;
+        orbitTarget.phi = Math.max(0.2, Math.min(Math.PI - 0.2, orbitTarget.phi));
+        dragStart.x = t.clientX;
+        dragStart.y = t.clientY;
+        break;
+      }
+    }
+  });
+  el.addEventListener('touchend', (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === touchId) { touchId = null; document.body.classList.remove('grabbed'); }
+      if (t.identifier === touch2Id) { touch2Id = null; }
+    }
+  });
+
+  // Scroll = zoom (orbit radius)
+  el.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    orbitTarget.radius *= e.deltaY > 0 ? 1.08 : 0.92;
+    orbitTarget.radius = Math.max(30, Math.min(2000, orbitTarget.radius));
+  }, { passive: false });
+
+  playPauseBtn.addEventListener('click', togglePlay);
+
+  let scrubbing = false;
+  progressWrap.addEventListener('mousedown', (e) => { scrubbing = true; scrubTo(e); });
+  window.addEventListener('mousemove', (e) => { if (scrubbing) scrubTo(e); });
+  window.addEventListener('mouseup', () => { scrubbing = false; });
+  function scrubTo(e) {
+    const rect = progressWrap.getBoundingClientRect();
+    seekTo(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * totalDuration);
+  }
+
+  audioModeBtn.addEventListener('click', () => {
+    if (!mp3Url) return;
+    useMP3 = !useMP3;
+    audioModeBtn.textContent = useMP3 ? 'MP3' : 'SYNTH';
+    if (playing) { stopPlayback(); startPlayback(); }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ── Playback ──
+function togglePlay() { playing ? stopPlayback() : startPlayback(); }
+
+function startPlayback() {
+  playing = true;
+  playPauseBtn.innerHTML = '&#10074;&#10074;';
+  lastFrameTime = performance.now();
+  if (useMP3 && audioElement) {
+    audioElement.currentTime = playbackTime;
+    audioElement.play();
+  } else {
+    scheduleSynth();
+  }
+}
+
+function stopPlayback() {
+  playing = false;
+  playPauseBtn.innerHTML = '&#9654;';
+  if (useMP3 && audioElement) audioElement.pause();
+  else stopSynth();
+}
+
+function seekTo(time) {
+  playbackTime = Math.max(0, Math.min(totalDuration, time));
+  if (useMP3 && audioElement) audioElement.currentTime = playbackTime;
+  if (!useMP3 && playing) { stopSynth(); scheduleSynth(); }
+  lookAtTarget.x = playbackTime * PPS;
+}
+
+// ══════════════════════════════════════════
+// ── Synth Engine (raw Web Audio, rolling scheduler) ──
+// ══════════════════════════════════════════
+// Uses raw Web Audio API for maximum polyphony and zero voice-stealing issues.
+// Each note gets its own oscillator+gain pair, scheduled precisely via AudioContext timing.
+
+let audioCtx = null;
+let masterGain = null;
+let synthActive = false;
+let lastScheduledTime = 0;
+const SCHEDULE_AHEAD = 5.0;
+const SCHEDULE_INTERVAL = 1.5;
+let notesSortedByTime = [];
+let scheduledNoteIds = new Set();  // prevent double-scheduling
+let activeOscillators = [];         // for cleanup
+
+// Waveforms per track for timbral variety
+const TRACK_WAVEFORMS = ['triangle', 'sawtooth', 'square', 'sine', 'triangle', 'sawtooth', 'square', 'sine'];
+
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function scheduleNoteWebAudio(n, when, noteId) {
+  if (!audioCtx || !masterGain) return;
+  if (scheduledNoteIds.has(noteId)) return;
+  scheduledNoteIds.add(noteId);
+
+  const freq = midiToFreq(n.midi);
+  const dur = Math.max(0.015, n.duration);
+  const vel = n.velocity * 0.8;
+  const wave = TRACK_WAVEFORMS[n.track % TRACK_WAVEFORMS.length];
+
+  // Oscillator
+  const osc = audioCtx.createOscillator();
+  osc.type = wave;
+  osc.frequency.value = freq;
+
+  // Gain envelope
+  const env = audioCtx.createGain();
+  env.gain.value = 0;
+
+  osc.connect(env);
+  env.connect(masterGain);
+
+  // Attack
+  const attack = 0.015;
+  const release = Math.min(0.3, dur * 0.3);
+  env.gain.setValueAtTime(0, when);
+  env.gain.linearRampToValueAtTime(vel, when + attack);
+  // Sustain
+  env.gain.setValueAtTime(vel, when + dur - release);
+  // Release
+  env.gain.linearRampToValueAtTime(0, when + dur + release);
+
+  osc.start(when);
+  osc.stop(when + dur + release + 0.05);
+
+  // Auto-cleanup after note ends
+  osc.onended = () => {
+    try { osc.disconnect(); env.disconnect(); } catch (_) {}
+  };
+
+  activeOscillators.push({ osc, env, endTime: when + dur + release + 0.05 });
+}
+
+async function scheduleSynth() {
+  // Create AudioContext on first play (user gesture required)
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+  stopSynth();
+
+  // Master gain — auto-scale volume by track count
+  masterGain = audioCtx.createGain();
+  const volScale = Math.min(1.0, 2.5 / Math.sqrt(Math.max(1, trackCount)));
+  masterGain.gain.value = volScale;
+  masterGain.connect(audioCtx.destination);
+
+  notesSortedByTime = [...allNotes].sort((a, b) => a.time - b.time);
+  scheduledNoteIds = new Set();
+  synthActive = true;
+  lastScheduledTime = playbackTime;
+
+  scheduleWindow(playbackTime, playbackTime + SCHEDULE_AHEAD);
+}
+
+function scheduleWindow(fromTime, toTime) {
+  if (!audioCtx || !masterGain) return;
+  const now = audioCtx.currentTime;
+  const baseOffset = playbackTime;
+
+  for (const n of notesSortedByTime) {
+    if (n.time + n.duration < fromTime) continue;
+    if (n.time > toTime) break;
+    if (n.time < fromTime) continue;
+
+    const when = now + (n.time - baseOffset);
+    if (when < now - 0.05) continue;
+
+    // Unique ID per note event to prevent double-scheduling
+    const noteId = n.time * 100000 + n.midi * 100 + n.track;
+    scheduleNoteWebAudio(n, Math.max(now, when), noteId);
+  }
+
+  lastScheduledTime = toTime;
+}
+
+function updateSynthScheduler() {
+  if (!synthActive || useMP3) return;
+  if (playbackTime > lastScheduledTime - SCHEDULE_INTERVAL) {
+    scheduleWindow(lastScheduledTime, lastScheduledTime + SCHEDULE_AHEAD);
+  }
+
+  // Prune ended oscillators from tracking array (memory hygiene)
+  if (audioCtx && activeOscillators.length > 500) {
+    const now = audioCtx.currentTime;
+    activeOscillators = activeOscillators.filter(o => o.endTime > now);
+  }
+}
+
+function stopSynth() {
+  synthActive = false;
+  scheduledNoteIds = new Set();
+  // Kill all active oscillators immediately
+  const now = audioCtx ? audioCtx.currentTime : 0;
+  activeOscillators.forEach(({ osc, env }) => {
+    try {
+      env.gain.cancelScheduledValues(now);
+      env.gain.setValueAtTime(0, now);
+      osc.stop(now + 0.01);
+    } catch (_) {}
+  });
+  activeOscillators = [];
+  if (masterGain) {
+    try { masterGain.disconnect(); } catch (_) {}
+    masterGain = null;
+  }
+}
+
+// ══════════════════════════════════════════
+// ── ANIMATION LOOP ──
+// ══════════════════════════════════════════
+let particleIdx = 0;
+const MAX_PARTICLES = 4000;
+const activeNoteSet = new Set();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = (now - lastFrameTime) / 1000;
+  lastFrameTime = now;
+  const time = now * 0.001; // seconds since start
+
+  // ── Playback time ──
+  if (playing) {
+    if (useMP3 && audioElement) {
+      playbackTime = audioElement.currentTime;
+    } else {
+      playbackTime += dt;
+    }
+    if (playbackTime >= totalDuration) {
+      playbackTime = 0;
+      if (!useMP3) { stopSynth(); scheduleSynth(); }
+      else if (audioElement) audioElement.currentTime = 0;
+    }
+  }
+
+  if (playing) {
+    lookAtTarget.x = playbackTime * PPS;
+    updateSynthScheduler();
+  }
+
+  // ── Smooth orbit camera ──
+  const lerp = 0.06;
+  orbit.theta += (orbitTarget.theta - orbit.theta) * lerp;
+  orbit.phi += (orbitTarget.phi - orbit.phi) * lerp;
+  orbit.radius += (orbitTarget.radius - orbit.radius) * lerp;
+  lookAtPos.x += (lookAtTarget.x - lookAtPos.x) * lerp;
+  lookAtPos.y += (lookAtTarget.y - lookAtPos.y) * lerp;
+  lookAtPos.z += (lookAtTarget.z - lookAtPos.z) * lerp;
+
+  // Spherical to cartesian
+  const r = orbit.radius;
+  const camX = lookAtPos.x + r * Math.sin(orbit.phi) * Math.sin(orbit.theta);
+  const camY = lookAtPos.y + r * Math.cos(orbit.phi);
+  const camZ = lookAtPos.z + r * Math.sin(orbit.phi) * Math.cos(orbit.theta);
+  camera.position.set(camX, camY, camZ);
+  camera.lookAt(lookAtPos.x, lookAtPos.y, lookAtPos.z);
+
+  // ── Cursor ──
+  if (cursorLine) {
+    cursorLine.position.x = playbackTime * PPS;
+    cursorLine.position.z = 0;
+  }
+
+  // ── Per-note proximity highlighting + particle spawning ──
+  // Only glow notes when actually playing — otherwise show base colors
+  const ct = playbackTime;
+  const GLOW_RADIUS = 0.3; // seconds of proximity glow on each side (tight)
+  const glowActive = playing; // no glow when paused
+
+  noteMeshes.forEach(instMesh => {
+    const { notes } = instMesh.userData;
+
+    notes.forEach((n, i) => {
+      const bc = n.baseColor;
+      const noteStart = n.time;
+      const noteEnd = n.time + n.duration;
+
+      // Hide notes that haven't been reached yet (ahead of cursor)
+      if (ct < noteStart) {
+        instMesh.instanceColor.setXYZ(i, 0, 0, 0); // invisible against black bg
+        return;
+      }
+
+      // Distance from cursor to this note (0 = cursor inside note)
+      let proximity;
+      if (ct >= noteStart && ct <= noteEnd) {
+        proximity = 0;
+      } else {
+        proximity = ct - noteEnd; // cursor is past note
+      }
+
+      // Smooth brightness: 1.0 when on the note, fading to 0 over GLOW_RADIUS seconds
+      const glow = proximity <= 0 ? 1.0 : Math.max(0, 1.0 - proximity / GLOW_RADIUS);
+
+      if (glowActive && glow > 0) {
+        const t = glow * glow * (3.0 - 2.0 * glow);
+        const boost = 1.0 + t * 12.0 * n.glowScale;
+        instMesh.instanceColor.setXYZ(i,
+          bc.r * boost,
+          bc.g * boost,
+          bc.b * boost
+        );
+
+        if (proximity <= 0 && playing && Math.random() < 0.4) {
+          const pi = (particleIdx % MAX_PARTICLES) * 3;
+          particlePositions[pi] = ct * PPS + (Math.random() - 0.5) * 4;
+          particlePositions[pi + 1] = (n.midi - midPitch) * PITCH_SCALE + (Math.random() - 0.5) * NOTE_HEIGHT * 2;
+          particlePositions[pi + 2] = n.zPos + (Math.random() - 0.5) * NOTE_DEPTH;
+          particleColors[pi] = bc.r * 2;
+          particleColors[pi + 1] = bc.g * 2;
+          particleColors[pi + 2] = bc.b * 2;
+          particleAlphas[particleIdx % MAX_PARTICLES] = 0.9 + Math.random() * 0.1;
+          particleIdx++;
+        }
+      } else {
+        // Note has been passed — show at base color
+        instMesh.instanceColor.setXYZ(i, bc.r, bc.g, bc.b);
+      }
+    });
+
+    // Keep emissive low — per-instance HDR colors drive the bloom for active notes only
+    instMesh.material.emissiveIntensity = 0.15;
+    instMesh.instanceColor.needsUpdate = true;
+  });
+
+  // ── Particle decay ──
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    if (particleAlphas[i] > 0) {
+      particleAlphas[i] *= 0.96;
+      particlePositions[i * 3 + 1] += (Math.random() - 0.3) * 0.5; // drift up
+      particlePositions[i * 3] += (Math.random() - 0.5) * 0.3;
+      if (particleAlphas[i] < 0.01) {
+        particleAlphas[i] = 0;
+        particlePositions[i * 3 + 1] = -9999;
+      }
+    }
+  }
+  particleSystem.geometry.attributes.position.needsUpdate = true;
+  particleSystem.geometry.attributes.color.needsUpdate = true;
+  particleSystem.geometry.attributes.alpha.needsUpdate = true;
+
+  // ── UI ──
+  progressBar.style.width = (totalDuration > 0 ? (playbackTime / totalDuration) * 100 : 0) + '%';
+  timeCurrent.textContent = formatTime(playbackTime);
+
+  // ── Render with post-processing ──
+  composer.render();
+}
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+</script>
+</body>
+</html>

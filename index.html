@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Piano Roll</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --hud-opacity: 0.85; --accent: #7c6dfa; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    #canvas-container { position: fixed; inset: 0; }
+    #canvas-container canvas { display: block; width: 100% !important; height: 100% !important; }
+
+    /* ═══════════════════════════════════════════
+       SETTINGS PANEL  (boot + settings) — right side
+    ═══════════════════════════════════════════ */
+    #left-panel {
+      position: fixed; right: 0; top: 0; bottom: 0;
+      width: 400px;
+      background: rgba(8,8,14, calc(0.97 * var(--hud-opacity)));
+      backdrop-filter: blur(24px);
+      border-left: 1px solid rgba(255,255,255,0.07);
+      z-index: 50;
+      display: flex; flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.32s cubic-bezier(0.4,0,0.2,1);
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    }
+    #left-panel.open { transform: translateX(0); }
+    /* After a MIDI is loaded the transport occupies the bottom 60px — keep
+       both side panels above it so they never overlap. */
+    body.midi-loaded #left-panel,
+    body.midi-loaded #track-panel { bottom: 60px; }
+
+    /* Logo bar */
+    .panel-header {
+      padding: 20px 20px 0;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .panel-logo {
+      font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; color: #fff;
+    }
+    .panel-logo span { color: var(--accent, #7c6dfa); }
+    .panel-close {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.5); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; transition: all 0.15s;
+    }
+    .panel-close:hover { background: rgba(255,255,255,0.14); color: #fff; }
+
+    /* Tab nav */
+    .tab-nav {
+      display: flex; gap: 2px;
+      padding: 14px 14px 0;
+      flex-shrink: 0;
+    }
+    .tab-btn {
+      flex: 1; padding: 7px 4px; border-radius: 8px;
+      border: none; background: rgba(255,255,255,0.05);
+      color: rgba(255,255,255,0.45); font-size: 0.75rem; font-weight: 500;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .tab-btn:hover { background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.75); }
+    .tab-btn.active { background: rgba(124,109,250,0.2); color: #fff; }
+
+    /* Tab content */
+    .tab-content { display: none; flex: 1; overflow-y: auto; padding: 16px 16px 24px; }
+    .tab-content.active { display: flex; flex-direction: column; gap: 4px; }
+
+    /* ── Load tab ── */
+    .drop-zones-v { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+    .drop-zone {
+      height: 72px; border: 1.5px dashed rgba(255,255,255,0.18);
+      border-radius: 12px; display: flex; align-items: center;
+      gap: 12px; padding: 0 16px; cursor: pointer; position: relative;
+      transition: border-color 0.2s, background 0.2s;
+      color: rgba(255,255,255,0.45); font-size: 0.84rem;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent, #7c6dfa);
+      background: rgba(124,109,250,0.07);
+      color: rgba(255,255,255,0.9);
+    }
+    .drop-zone.loaded { border-color: #4ade80; color: #4ade80; }
+    .drop-zone svg { width: 22px; height: 22px; opacity: 0.65; flex-shrink: 0; }
+    .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .drop-zone-text { display: flex; flex-direction: column; gap: 2px; }
+    .drop-zone-title { font-weight: 500; }
+    .drop-zone-sub { font-size: 0.72rem; opacity: 0.5; }
+    #start-btn {
+      width: 100%; padding: 13px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent, #7c6dfa), #a78bfa);
+      border: none; color: #fff; font-size: 0.95rem; font-weight: 600;
+      cursor: pointer; letter-spacing: 0.02em; margin-top: 4px;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 28px rgba(124,109,250,0.35);
+      opacity: 0.4; pointer-events: none;
+    }
+    #start-btn.ready { opacity: 1; pointer-events: all; }
+    #start-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 36px rgba(124,109,250,0.55); }
+
+    /* ── Settings sections ── */
+    .s-section { margin-bottom: 18px; }
+    .s-section-title {
+      color: rgba(255,255,255,0.78); font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      margin-bottom: 10px; padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .s-section-title::before {
+      content: ''; display: inline-block;
+      width: 3px; height: 12px; border-radius: 2px;
+      background: var(--accent, #7c6dfa);
+    }
+    .s-help {
+      color: rgba(255,255,255,0.42); font-size: 0.7rem;
+      line-height: 1.5; margin: -4px 0 10px;
+    }
+    .s-help b { color: rgba(255,255,255,0.65); font-weight: 600; }
+    .s-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; min-height: 26px; }
+    .s-label { color: rgba(255,255,255,0.7); font-size: 0.82rem; display: flex; align-items: center; gap: 4px; }
+    .s-value { color: rgba(255,255,255,0.38); font-size: 0.72rem; }
+    .s-slider { width: 110px; accent-color: var(--accent, #7c6dfa); cursor: pointer; }
+    .s-toggle { position: relative; width: 34px; height: 19px; cursor: pointer; flex-shrink: 0; }
+    .s-toggle input { opacity: 0; width: 0; height: 0; }
+    .s-toggle-track { position: absolute; inset: 0; border-radius: 10px; background: rgba(255,255,255,0.13); transition: background 0.2s; }
+    .s-toggle input:checked ~ .s-toggle-track { background: var(--accent, #7c6dfa); }
+    .s-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: transform 0.2s; }
+    .s-toggle input:checked ~ .s-toggle-thumb { transform: translateX(15px); }
+    .s-color { width: 30px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.18); cursor: pointer; padding: 0; }
+    .s-select {
+      background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+      color: #fff; border-radius: 8px; padding: 3px 7px;
+      font-size: 0.78rem; cursor: pointer; max-width: 120px;
+    }
+    .preset-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 14px; }
+    .preset-btn {
+      padding: 7px 4px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.6); font-size: 0.71rem;
+      cursor: pointer; transition: all 0.15s; text-align: center;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .preset-btn:hover { border-color: var(--accent, #7c6dfa); color: #fff; }
+    .preset-btn.active { border-color: var(--accent, #7c6dfa); background: rgba(124,109,250,0.18); color: #fff; }
+    .s-theme-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .s-action-btn {
+      flex: 1; padding: 6px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.05);
+      color: rgba(255,255,255,0.65); font-size: 0.76rem;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .s-action-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .gradient-stops { display: flex; gap: 5px; }
+    .stop-color { width: 26px; height: 22px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.14); cursor: pointer; padding: 0; }
+    .s-divider { height: 1px; background: rgba(255,255,255,0.15); margin: 12px 0 16px; box-shadow: 0 0 6px rgba(255,255,255,0.06); }
+    .lib-input {
+      flex: 1; min-width: 0; padding: 6px 8px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px; color: rgba(255,255,255,0.9); font-size: 0.78rem;
+      font-family: inherit; outline: none;
+    }
+    .lib-input:focus { border-color: var(--accent, #7c6dfa); background: rgba(255,255,255,0.08); }
+    .lib-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .lib-empty { color: rgba(255,255,255,0.3); font-size: 0.74rem; padding: 6px 2px; font-style: italic; }
+    .lib-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 8px;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+    }
+    .lib-row-main { flex: 1; min-width: 0; }
+    .lib-row-name { color: rgba(255,255,255,0.88); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lib-row-sub { color: rgba(255,255,255,0.4); font-size: 0.7rem; margin-top: 2px; }
+    .lib-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .lib-row-actions .s-action-btn { flex: 0 0 auto; padding: 4px 10px; font-size: 0.72rem; }
+    .lib-row-actions .lib-delete { padding: 4px 8px; }
+
+    /* ═══════════════════════════════════════════
+       TRANSPORT BAR
+    ═══════════════════════════════════════════ */
+    #transport {
+      position: fixed; bottom: 0; left: 0; right: 0; height: 60px;
+      display: flex; align-items: center; gap: 14px; padding: 0 20px;
+      background: rgba(0,0,0, calc(0.7 * var(--hud-opacity))); backdrop-filter: blur(20px);
+      border-top: 1px solid rgba(255,255,255,0.07);
+      z-index: 40;
+      opacity: 0; pointer-events: none;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.3s;
+      font-family: 'SF Mono','Fira Code',monospace;
+    }
+    /* `.visible` = MIDI loaded (transport available at all);
+       `.hover`   = cursor is in the bottom strip (auto-hide trigger). */
+    #transport.visible.hover {
+      opacity: 1; pointer-events: all;
+      transform: translateY(0);
+    }
+    .t-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.07);
+      color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s; flex-shrink: 0;
+    }
+    .t-btn:hover { background: rgba(255,255,255,0.16); }
+    .t-btn svg { width: 15px; height: 15px; }
+    #seek {
+      flex: 1; height: 3px; cursor: pointer; accent-color: var(--accent, #7c6dfa);
+      -webkit-appearance: none; background: rgba(255,255,255,0.14); border-radius: 2px;
+    }
+    #seek::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+      background: var(--accent, #7c6dfa); box-shadow: 0 0 6px rgba(124,109,250,0.8);
+    }
+    #time-display { color: rgba(255,255,255,0.55); font-size: 0.78rem; white-space: nowrap; }
+    #speed-select {
+      background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+      color: #fff; border-radius: 7px; padding: 3px 7px; font-size: 0.78rem; cursor: pointer;
+    }
+    #settings-btn, #tracks-btn, #view-mode-btn, #export-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.6); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; flex-shrink: 0;
+    }
+    #settings-btn:hover, #tracks-btn:hover, #view-mode-btn:hover, #export-btn:hover { background: rgba(255,255,255,0.16); color: #fff; }
+    #settings-btn svg, #tracks-btn svg, #export-btn svg { width: 17px; height: 17px; }
+    #view-mode-btn.composition { background: rgba(124,109,250,0.25); color: #fff; border-color: var(--accent, #7c6dfa); }
+
+    /* ═══════════════════════════════════════════
+       TRACK PANEL  (right side, above transport)
+    ═══════════════════════════════════════════ */
+    #track-panel {
+      position: fixed; right: 0; top: 0; bottom: 60px; width: 400px;
+      background: rgba(8,8,14, calc(0.97 * var(--hud-opacity))); backdrop-filter: blur(24px);
+      border-left: 1px solid rgba(255,255,255,0.07);
+      z-index: 51; padding: 20px 16px;
+      transform: translateX(100%);
+      transition: transform 0.32s cubic-bezier(0.4,0,0.2,1);
+      overflow-y: auto; font-family: system-ui, sans-serif;
+      display: none;
+    }
+    #track-panel.open { transform: translateX(0); }
+    #track-panel h3 { color: rgba(255,255,255,0.35); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
+    .track-item { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-radius: 8px; }
+    .track-item:hover { background: rgba(255,255,255,0.04); }
+    .track-color { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; cursor: pointer; border: none; padding: 0; }
+    .track-name { flex: 1; color: rgba(255,255,255,0.8); font-size: 0.84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track-notes { color: rgba(255,255,255,0.28); font-size: 0.73rem; }
+    .track-eye { background: none; border: none; color: rgba(255,255,255,0.38); cursor: pointer; padding: 3px; border-radius: 4px; }
+    .track-eye:hover { color: #fff; }
+    .track-eye.muted { color: rgba(255,255,255,0.12); }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <!-- ── Left panel (boot + settings) ── -->
+  <div id="left-panel" class="open">
+    <div class="panel-header">
+      <div class="panel-logo">Piano<span>Roll</span></div>
+      <button class="panel-close" id="panel-close-btn">✕</button>
+    </div>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="load" data-view="both">Load</button>
+      <button class="tab-btn" data-tab="library" data-view="both">Library</button>
+      <button class="tab-btn" data-tab="theme" data-view="both">Theme</button>
+      <button class="tab-btn" data-tab="notes" data-view="both">Notes</button>
+      <button class="tab-btn" data-tab="piano" data-view="performance">Piano</button>
+      <button class="tab-btn" data-tab="comp" data-view="composition">3D</button>
+      <button class="tab-btn" data-tab="timeline" data-view="both">Timeline</button>
+      <button class="tab-btn" data-tab="fx" data-view="both">Effects</button>
+    </div>
+
+    <!-- LOAD TAB -->
+    <div class="tab-content active" id="tab-load">
+      <div class="drop-zones-v">
+        <div class="drop-zone" id="midi-zone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>
+          <div class="drop-zone-text">
+            <span class="drop-zone-title" id="midi-label">Drop MIDI file</span>
+            <span class="drop-zone-sub">.mid / .midi</span>
+          </div>
+          <input type="file" accept=".mid,.midi" id="midi-input" />
+        </div>
+        <div class="drop-zone" id="audio-zone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <div class="drop-zone-text">
+            <span class="drop-zone-title" id="audio-label">Drop audio (optional)</span>
+            <span class="drop-zone-sub">.mp3 / .wav / .ogg</span>
+          </div>
+          <input type="file" accept="audio/*" id="audio-input" />
+        </div>
+      </div>
+      <button id="start-btn">▶ Start</button>
+
+      <div class="s-divider" style="margin-top:20px"></div>
+      <p style="color:rgba(255,255,255,0.3);font-size:0.78rem;line-height:1.5">
+        Load a MIDI file to begin. Audio is optional — sync playback with any matching audio file.<br><br>
+        Explore the tabs above to customise how the visualiser looks. Changes are live.
+      </p>
+    </div>
+
+    <!-- LIBRARY TAB -->
+    <div class="tab-content" id="tab-library">
+      <div class="s-section">
+        <div class="s-section-title">Projects</div>
+        <div class="s-help">Save the current MIDI + audio + theme into your browser. Stays after a page reload.</div>
+        <div class="s-row" style="gap:6px">
+          <input type="text" class="lib-input" id="lib-project-name" placeholder="Project name" />
+          <button class="s-action-btn" id="lib-save-project">Save</button>
+        </div>
+        <div class="lib-list" id="lib-project-list"></div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">Themes</div>
+        <div class="s-help">Save the current look only (no MIDI). Apply on any project.</div>
+        <div class="s-row" style="gap:6px">
+          <input type="text" class="lib-input" id="lib-theme-name" placeholder="Theme name" />
+          <button class="s-action-btn" id="lib-save-theme">Save</button>
+        </div>
+        <div class="lib-list" id="lib-theme-list"></div>
+      </div>
+    </div>
+
+    <!-- THEME TAB -->
+    <div class="tab-content" id="tab-theme">
+      <div class="s-section">
+        <div class="s-section-title">Presets</div>
+        <div class="preset-grid" id="preset-grid"></div>
+        <div class="s-theme-actions">
+          <button class="s-action-btn" id="export-theme-btn">Export JSON</button>
+          <button class="s-action-btn" id="import-theme-btn">Import JSON</button>
+          <input type="file" accept=".json" id="theme-import-input" style="display:none" />
+        </div>
+      </div>
+      <div class="s-divider" data-view="performance"></div>
+      <div class="s-section" data-view="performance">
+        <div class="s-section-title">Scene</div>
+        <div class="s-row"><span class="s-label">Camera</span>
+          <select class="s-select" id="view-camera-mode">
+            <option value="ortho">2D (orthographic)</option>
+            <option value="perspective">3D (perspective)</option>
+          </select>
+        </div>
+        <div class="s-row" id="view-angle-row" style="display:none"><span class="s-label">Angle</span>
+          <select class="s-select" id="view-camera-angle"><option value="standard">First-person</option></select>
+        </div>
+        <div class="s-row"><span class="s-label">Reflective floor</span>
+          <label class="s-toggle"><input type="checkbox" id="view-reflective-floor" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label>
+        </div>
+      </div>
+      <div class="s-divider" data-view="performance"></div>
+      <div class="s-section" data-view="performance">
+        <div class="s-section-title">Background</div>
+        <div class="s-row"><span class="s-label">Base colour</span><input type="color" class="s-color" id="bg-color" /></div>
+        <div class="s-row"><span class="s-label">Gradient</span><label class="s-toggle"><input type="checkbox" id="bg-gradient" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Stops</span><div class="gradient-stops"><input type="color" class="stop-color" id="bg-stop0" /><input type="color" class="stop-color" id="bg-stop1" /><input type="color" class="stop-color" id="bg-stop2" /></div></div>
+        <div class="s-row"><span class="s-label">Starfield</span><label class="s-toggle"><input type="checkbox" id="bg-stars" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Scanlines</span><label class="s-toggle"><input type="checkbox" id="bg-scanlines" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+      </div>
+      <div class="s-divider" data-view="performance"></div>
+      <div class="s-section" data-view="performance">
+        <div class="s-section-title">Background media</div>
+        <div class="s-row">
+          <span class="s-label">Source</span>
+          <div style="display:flex;gap:6px">
+            <button class="s-action-btn" id="bg-media-pick" style="padding:4px 10px;font-size:0.74rem">Choose…</button>
+            <button class="s-action-btn" id="bg-media-clear" style="padding:4px 10px;font-size:0.74rem">Clear</button>
+            <input type="file" accept="image/*,video/*" id="bg-media-input" style="display:none" />
+          </div>
+        </div>
+        <div class="s-row" style="font-size:0.7rem;color:rgba(255,255,255,0.4)">
+          <span class="s-label">File</span>
+          <span id="bg-media-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">none</span>
+        </div>
+        <div class="s-row"><span class="s-label">Fit</span>
+          <select class="s-select" id="bg-media-fit">
+            <option value="cover">Cover</option>
+            <option value="contain">Contain</option>
+            <option value="stretch">Stretch</option>
+          </select>
+        </div>
+        <div class="s-row"><span class="s-label">Opacity <span class="s-value" id="bg-media-opacity-v">1.0</span></span><input type="range" class="s-slider" id="bg-media-opacity" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Blur <span class="s-value" id="bg-media-blur-v">0</span></span><input type="range" class="s-slider" id="bg-media-blur" min="0" max="20" /></div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">UI</div>
+        <div class="s-row"><span class="s-label">HUD opacity <span class="s-value" id="hud-op-v">0.8</span></span><input type="range" class="s-slider" id="hud-opacity" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Accent colour</span><input type="color" class="s-color" id="ui-accent" /></div>
+      </div>
+    </div>
+
+    <!-- NOTES TAB -->
+    <div class="tab-content" id="tab-notes">
+      <div class="s-section" data-view="performance">
+        <div class="s-section-title">Note Bars</div>
+        <div class="s-row"><span class="s-label">Shape</span><select class="s-select" id="note-shape"><option value="rectangle">Rectangle</option><option value="rounded">Rounded</option><option value="capsule">Capsule</option></select></div>
+        <div class="s-row"><span class="s-label">Opacity <span class="s-value" id="note-opacity-v">1.0</span></span><input type="range" class="s-slider" id="note-opacity" min="30" max="100" /></div>
+        <div class="s-row"><span class="s-label">Glow <span class="s-value" id="note-glow-v">1.0</span></span><input type="range" class="s-slider" id="note-glow" min="0" max="200" /></div>
+        <div class="s-row"><span class="s-label">Bloom contribution <span class="s-value" id="note-bloom-mul-v">1.0</span></span><input type="range" class="s-slider" id="note-bloom-mul" min="0" max="200" /></div>
+        <div class="s-row"><span class="s-label">Trail length <span class="s-value" id="trail-len-v">0.3</span></span><input type="range" class="s-slider" id="trail-length" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Trail opacity <span class="s-value" id="trail-op-v">0.3</span></span><input type="range" class="s-slider" id="trail-opacity" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Corner radius <span class="s-value" id="corner-r-v">6</span></span><input type="range" class="s-slider" id="corner-radius" min="0" max="20" /></div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">Dynamics</div>
+        <div class="s-help">Map MIDI velocity to note brightness — loud notes glow more than soft ones.</div>
+        <div class="s-row"><span class="s-label">Enabled</span><label class="s-toggle"><input type="checkbox" id="vel-mod-enabled" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Soft brightness <span class="s-value" id="vel-min-v">0.5</span></span><input type="range" class="s-slider" id="vel-min" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Loud brightness <span class="s-value" id="vel-max-v">1.4</span></span><input type="range" class="s-slider" id="vel-max" min="50" max="200" /></div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">Atmosphere</div>
+        <div class="s-row"><span class="s-label">Shimmer <span class="s-value" id="note-shimmer-v">0.0</span></span><input type="range" class="s-slider" id="note-shimmer" min="0" max="40" /></div>
+        <div class="s-row"><span class="s-label">Afterglow <span class="s-value" id="note-afterglow-v">0.3</span></span><input type="range" class="s-slider" id="note-afterglow" min="0" max="200" /></div>
+      </div>
+      <div class="s-divider" data-view="performance"></div>
+      <div class="s-section" data-view="performance">
+        <div class="s-section-title">Beat / Bar Markers</div>
+        <div class="s-help">Horizontal lines scrolling with the notes, snapped to the MIDI's BPM.</div>
+        <div class="s-row"><span class="s-label">Beats</span><label class="s-toggle"><input type="checkbox" id="marker-beats-enabled" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Beat colour</span><input type="color" class="s-color" id="marker-beats-color" /></div>
+        <div class="s-row"><span class="s-label">Beat opacity <span class="s-value" id="marker-beats-op-v">0.08</span></span><input type="range" class="s-slider" id="marker-beats-op" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Bars</span><label class="s-toggle"><input type="checkbox" id="marker-bars-enabled" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Bar colour</span><input type="color" class="s-color" id="marker-bars-color" /></div>
+        <div class="s-row"><span class="s-label">Bar opacity <span class="s-value" id="marker-bars-op-v">0.18</span></span><input type="range" class="s-slider" id="marker-bars-op" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Bar thickness <span class="s-value" id="marker-bars-th-v">2</span></span><input type="range" class="s-slider" id="marker-bars-th" min="1" max="6" step="1" /></div>
+        <div class="s-row"><span class="s-label">Beats / bar</span><input type="number" id="marker-bpb" min="1" max="16" step="1" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);color:#fff;border-radius:8px;padding:3px 7px;font-size:0.78rem;width:60px"></div>
+      </div>
+      <div class="s-divider" data-view="performance"></div>
+      <div class="s-section">
+        <div class="s-section-title">Colour Mode</div>
+        <div class="s-row"><span class="s-label">Mode</span>
+          <select class="s-select" id="note-color-mode">
+            <option value="track">By track</option>
+            <option value="pitch">By pitch class</option>
+          </select>
+        </div>
+      </div>
+      <div class="s-section" id="track-colors-section">
+        <div class="s-section-title">Track Colours</div>
+        <div id="track-color-swatches" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0">
+          <!-- populated by JS -->
+        </div>
+      </div>
+      <div class="s-section" id="pitch-colors-section">
+        <div class="s-section-title">Pitch Palette (C, C#, D, …, B)</div>
+        <div id="pitch-color-swatches" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0">
+          <!-- populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 3D (COMPOSITION) TAB -->
+    <div class="tab-content" id="tab-comp">
+      <div class="s-section">
+        <div class="s-section-title">Camera</div>
+        <div class="s-row"><span class="s-label">Preset</span>
+          <select class="s-select" id="comp-camera-preset">
+            <option value="tilt">Tilt (default)</option>
+            <option value="front">Front</option>
+            <option value="side">Side</option>
+            <option value="top">Top-down</option>
+          </select>
+        </div>
+        <div class="s-row"><span class="s-label">Recenter</span>
+          <button class="s-action-btn" id="comp-recenter-btn" style="max-width:140px">Reset view</button>
+        </div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">Cursor & Glow</div>
+        <div class="s-row"><span class="s-label">Cursor brightness <span class="s-value" id="comp-cursor-v">1.0</span></span><input type="range" class="s-slider" id="comp-cursor-opacity" min="0" max="200" /></div>
+        <div class="s-row"><span class="s-label">Glow radius <span class="s-value" id="comp-glow-radius-v">0.30</span></span><input type="range" class="s-slider" id="comp-glow-radius" min="5" max="150" /></div>
+        <div class="s-row"><span class="s-label">Glow intensity <span class="s-value" id="comp-glow-int-v">1.0</span></span><input type="range" class="s-slider" id="comp-glow-intensity" min="0" max="250" /></div>
+      </div>
+    </div>
+
+    <!-- PIANO TAB -->
+    <div class="tab-content" id="tab-piano">
+      <div class="s-section">
+        <div class="s-section-title">Style</div>
+        <div class="s-row">
+          <span class="s-label">Mode</span>
+          <select class="s-select" id="piano-style">
+            <option value="realistic">Realistic</option>
+            <option value="neon">Neon</option>
+          </select>
+        </div>
+        <div class="s-row"><span class="s-label">White keys</span><input type="color" class="s-color" id="piano-white" /></div>
+        <div class="s-row"><span class="s-label">Black keys</span><input type="color" class="s-color" id="piano-black" /></div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">Key Press</div>
+        <div class="s-row"><span class="s-label">Press glow</span><label class="s-toggle"><input type="checkbox" id="piano-glow" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Press colour</span><select class="s-select" id="piano-press-source"><option value="track">From track</option><option value="custom">Custom</option></select></div>
+        <div class="s-row"><span class="s-label">Custom colour</span><input type="color" class="s-color" id="piano-press-color" /></div>
+        <div class="s-row"><span class="s-label">Depth press</span><label class="s-toggle"><input type="checkbox" id="piano-depth" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">Glow</div>
+        <div class="s-help">Each slider scales that element's contribution to the master bloom pass.</div>
+        <div class="s-row"><span class="s-label">Hit line <span class="s-value" id="piano-hitline-glow-v">1.0</span></span><input type="range" class="s-slider" id="piano-hitline-glow" min="0" max="200" /></div>
+        <div class="s-row"><span class="s-label">Press beam <span class="s-value" id="piano-beam-glow-v">1.0</span></span><input type="range" class="s-slider" id="piano-beam-glow" min="0" max="200" /></div>
+        <div class="s-row"><span class="s-label">Hit-line ripple</span><label class="s-toggle"><input type="checkbox" id="piano-ripple" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+      </div>
+    </div>
+
+    <!-- TIMELINE TAB -->
+    <div class="tab-content" id="tab-timeline">
+      <div class="s-section">
+        <div class="s-section-title">Track Opacity</div>
+        <div id="tl-opacity-rows"></div>
+        <button class="s-action-btn" id="tl-clear-btn" style="margin-top:10px">Clear all opacity</button>
+        <div style="color: rgba(255,255,255,0.4); font-size: 0.72rem; margin-top: 10px; line-height: 1.55">
+          <b>Click</b> to add. <b>Drag</b> to move. <b>Right-click</b> to delete.<br/>
+          Tracks with no keyframes stay at full opacity.
+        </div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">Camera Keyframes (3D view)</div>
+        <div class="s-row"><span class="s-label">Auto-drift</span>
+          <label class="s-toggle"><input type="checkbox" id="tl-auto-camera" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label>
+        </div>
+        <div id="tl-camera-row"></div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="s-action-btn" id="tl-cam-save">Save current view</button>
+          <button class="s-action-btn" id="tl-cam-clear">Clear all</button>
+        </div>
+        <div style="color: rgba(255,255,255,0.4); font-size: 0.72rem; margin-top: 10px; line-height: 1.55">
+          Switch to 3D, orbit to a view, click <b>Save current view</b> to keyframe at the current playback time.<br/>
+          With no keyframes set and auto-drift on, the camera subtly widens during dense passages.<br/>
+          Manual orbit pauses automation for 2 s.
+        </div>
+      </div>
+    </div>
+
+    <!-- EFFECTS TAB -->
+    <div class="tab-content" id="tab-fx">
+      <div class="s-section">
+        <div class="s-section-title">Master Bloom</div>
+        <div class="s-help">A single bloom pass. Per-element glow sliders live in <b>Notes</b> and <b>Piano</b> tabs and feed brightness into this pass.</div>
+        <div class="s-row"><span class="s-label">Enabled</span><label class="s-toggle"><input type="checkbox" id="fx-bloom" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Strength <span class="s-value" id="bloom-str-v">1.0</span></span><input type="range" class="s-slider" id="bloom-strength" min="0" max="120" /></div>
+        <div class="s-row"><span class="s-label">Threshold <span class="s-value" id="bloom-thr-v">0.2</span></span><input type="range" class="s-slider" id="bloom-threshold" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Radius <span class="s-value" id="bloom-rad-v">0.6</span></span><input type="range" class="s-slider" id="bloom-radius" min="0" max="100" /></div>
+      </div>
+      <div class="s-divider" data-view="performance"></div>
+      <div class="s-section" data-view="performance">
+        <div class="s-section-title">Particles</div>
+        <div class="s-help">GPU-simulated multi-layer system: hot sparks, glowing embers, and a soft ambient drift.</div>
+        <div class="s-row"><span class="s-label">Enabled</span><label class="s-toggle"><input type="checkbox" id="fx-particles" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Density <span class="s-value" id="particle-density-v">0.5</span></span><input type="range" class="s-slider" id="particle-density" min="0" max="200" /></div>
+        <div class="s-row"><span class="s-label">Glow <span class="s-value" id="particle-glow-v">1.0</span></span><input type="range" class="s-slider" id="particle-glow" min="0" max="200" /></div>
+        <div class="s-row"><span class="s-label">Swirl <span class="s-value" id="particle-curl-v">1.0</span></span><input type="range" class="s-slider" id="particle-curl" min="0" max="250" /></div>
+        <div class="s-row"><span class="s-label">Sparks</span><label class="s-toggle"><input type="checkbox" id="fx-layer-sparks" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Embers</span><label class="s-toggle"><input type="checkbox" id="fx-layer-embers" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Ambient drift</span><label class="s-toggle"><input type="checkbox" id="fx-layer-ambient" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+      </div>
+      <div class="s-divider"></div>
+      <div class="s-section">
+        <div class="s-section-title">Post-Processing</div>
+        <div class="s-row"><span class="s-label">Film grain</span><label class="s-toggle"><input type="checkbox" id="fx-grain" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Grain <span class="s-value" id="grain-int-v">0.2</span></span><input type="range" class="s-slider" id="grain-intensity" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Vignette</span><label class="s-toggle"><input type="checkbox" id="fx-vignette" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Vignette <span class="s-value" id="vignette-int-v">0.4</span></span><input type="range" class="s-slider" id="vignette-intensity" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Chromatic aberration</span><label class="s-toggle"><input type="checkbox" id="fx-chroma" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Chroma intensity <span class="s-value" id="chroma-int-v">0.3</span></span><input type="range" class="s-slider" id="chroma-intensity" min="0" max="100" /></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Track panel (separate from settings) -->
+  <div id="track-panel">
+    <h3>Tracks</h3>
+    <div id="track-list"></div>
+  </div>
+
+  <!-- Transport bar -->
+  <div id="transport">
+    <button class="t-btn" id="play-btn" title="Space">
+      <svg id="play-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>
+    </button>
+    <button class="t-btn" id="restart-btn" title="Restart">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 1 1 1.5 4"/><path d="M2 12V8h4"/></svg>
+    </button>
+    <input type="range" id="seek" min="0" max="1000" value="0" step="1" />
+    <span id="time-display">0:00 / 0:00</span>
+    <select id="speed-select">
+      <option value="0.25">0.25×</option>
+      <option value="0.5">0.5×</option>
+      <option value="1" selected>1×</option>
+      <option value="1.5">1.5×</option>
+      <option value="2">2×</option>
+    </select>
+    <button id="export-btn" title="Export video">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
+    </button>
+    <button id="view-mode-btn" title="Toggle view (V): Performance / Composition" style="width:auto;padding:0 12px;font-size:0.8rem;font-weight:600;letter-spacing:0.04em;">PERF</button>
+    <button id="tracks-btn" title="Tracks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <button id="settings-btn" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
