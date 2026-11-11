@@ -24,62 +24,36 @@ export class ExportDialog {
     this.cancelled = false;
 
     const overlay = document.createElement('div');
-    overlay.style.cssText = `
-      position: fixed; inset: 0; z-index: 200;
-      background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
-      display: flex; align-items: center; justify-content: center;
-      font-family: -apple-system, system-ui, sans-serif; color: #fff;
-    `;
+    overlay.className = 'dialog-overlay';
     overlay.innerHTML = `
-      <div style="background: #0e0e16; border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
-                  width: 420px; padding: 24px; box-shadow: 0 20px 80px rgba(0,0,0,0.6);">
-        <h2 style="font-size: 1.05rem; font-weight: 600; margin-bottom: 18px">Export video</h2>
-
-        <div style="display:flex; flex-direction:column; gap: 12px">
-          <label style="display:flex; align-items:center; justify-content:space-between">
-            <span style="color: rgba(255,255,255,0.65); font-size: 0.85rem">Resolution</span>
-            <select id="exp-res" style="background: rgba(255,255,255,0.06); color: #fff; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 5px 10px; font-size: 0.85rem">
-              <option value="1280x720">720p (1280 × 720)</option>
-              <option value="1920x1080" selected>1080p (1920 × 1080)</option>
-              <option value="2560x1440">1440p (2560 × 1440)</option>
-              <option value="3840x2160">4K (3840 × 2160)</option>
-            </select>
-          </label>
-          <label style="display:flex; align-items:center; justify-content:space-between">
-            <span style="color: rgba(255,255,255,0.65); font-size: 0.85rem">Frame rate</span>
-            <select id="exp-fps" style="background: rgba(255,255,255,0.06); color: #fff; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 5px 10px; font-size: 0.85rem">
-              <option value="30">30 fps</option>
-              <option value="60" selected>60 fps</option>
-            </select>
-          </label>
-          <div style="display:flex; align-items:center; justify-content:space-between">
-            <span style="color: rgba(255,255,255,0.65); font-size: 0.85rem">Duration</span>
-            <span style="color: rgba(255,255,255,0.5); font-size: 0.85rem">${formatTime(duration)}</span>
-          </div>
-          <div style="display:flex; align-items:center; justify-content:space-between">
-            <span style="color: rgba(255,255,255,0.65); font-size: 0.85rem">Audio</span>
-            <span style="color: rgba(255,255,255,0.5); font-size: 0.85rem">${audio?.label ?? 'None'}</span>
-          </div>
+      <div class="dialog" role="dialog" aria-label="Export video">
+        <h2>Export video</h2>
+        <label class="s-row">
+          <span class="s-label">Resolution</span>
+          <select id="exp-res" class="s-select">
+            <option value="1280x720">720p · 1280 × 720</option>
+            <option value="1920x1080" selected>1080p · 1920 × 1080</option>
+            <option value="2560x1440">1440p · 2560 × 1440</option>
+            <option value="3840x2160">4K · 3840 × 2160</option>
+          </select>
+        </label>
+        <label class="s-row">
+          <span class="s-label">Frame rate</span>
+          <select id="exp-fps" class="s-select">
+            <option value="30">30 fps</option>
+            <option value="60" selected>60 fps</option>
+          </select>
+        </label>
+        <div class="s-row"><span class="s-label">Length</span><span class="s-value">${formatTime(duration)}</span></div>
+        <div class="s-row"><span class="s-label">Sound</span><span class="s-value">${audio?.label ?? 'None'}</span></div>
+        <p class="d-note">An MP4 with H.264 video and AAC audio, rendered frame by frame, so it comes out smooth however fast your computer is. The built-in piano is rendered offline for sample-accurate sound.</p>
+        <div id="exp-progress" class="d-progress" style="display:none">
+          <div class="d-bar"><div id="exp-bar"></div></div>
+          <div id="exp-status" class="d-status"><span id="exp-frames">0 / 0 frames</span><span id="exp-eta"></span></div>
         </div>
-
-        <div style="color: rgba(255,255,255,0.4); font-size: 0.72rem; margin-top: 14px; line-height: 1.55">
-          Frame-by-frame H.264 video + AAC 320 kbps audio in MP4.<br/>
-          Synth audio is rendered offline through Web Audio for sample-accurate output.
-        </div>
-
-        <div id="exp-progress" style="display:none; margin-top: 18px">
-          <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden">
-            <div id="exp-bar" style="height: 100%; background: var(--accent, #7c6dfa); width: 0%; transition: width 0.1s linear"></div>
-          </div>
-          <div id="exp-status" style="color: rgba(255,255,255,0.55); font-size: 0.78rem; margin-top: 6px; display: flex; justify-content: space-between">
-            <span id="exp-frames">0 / 0 frames</span>
-            <span id="exp-eta"></span>
-          </div>
-        </div>
-
-        <div style="display:flex; gap: 8px; margin-top: 18px; justify-content: flex-end">
-          <button id="exp-cancel" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem">Cancel</button>
-          <button id="exp-start" style="background: var(--accent, #7c6dfa); border: none; color: #fff; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 0.88rem; font-weight: 600">Export</button>
+        <div class="d-actions">
+          <button id="exp-cancel" class="btn btn-ghost" type="button">Cancel</button>
+          <button id="exp-start" class="btn btn-primary" type="button">Export</button>
         </div>
       </div>
     `;

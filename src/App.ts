@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SceneManager } from './scene/SceneManager';
-import { Piano } from './scene/Piano';
+import { Piano, fitRange, FULL_RANGE } from './scene/Piano';
 import { NoteRain } from './scene/NoteRain';
 import { Particles } from './scene/Particles';
 import { BeatMarkers } from './scene/BeatMarkers';
@@ -18,6 +18,7 @@ import { SettingsPanel, type LibraryController } from './ui/SettingsPanel';
 import { TimelineEditor } from './ui/TimelineEditor';
 import { VideoExporter } from './export/VideoExporter';
 import { ExportDialog } from './ui/ExportDialog';
+import { Welcome } from './ui/Welcome';
 import type { MidiData } from './midi/MidiLoader';
 import type { ViewMode, InstrumentId } from './theme/types';
 import { ProjectLibrary } from './storage/ProjectLibrary';
@@ -99,7 +100,12 @@ export class App {
       });
     }
 
+    let lastRange = this.tm.current.piano.range;
     this.tm.onChange(theme => {
+      if (theme.piano.range !== lastRange) {
+        lastRange = theme.piano.range;
+        if (this.midiData) this._buildScene(this.midiData);
+      }
       this.sm.applyTheme(theme);
       this.rain.applyTheme(theme);
       this.particles.applyTheme(theme);
@@ -121,6 +127,7 @@ export class App {
 
     this.fileLoader = new FileLoader(this.audio, (loaded) => this._startReal(loaded), this.settings);
     this.settings.setLibraryController(this._buildLibraryController());
+    new Welcome(this.settings);
 
     window.addEventListener('resize', () => {
       this.orbitCam.setAspect(this.sm.width / this.sm.height);
@@ -205,6 +212,7 @@ export class App {
     );
     this.trackList.build(midi.tracks);
     this.transport.show();
+    this.transport.setTitle(loaded.fileName.replace(/\.(mid|midi)$/i, '').replace(/[_-]+/g, ' '));
     document.body.classList.add('midi-loaded');
     // Reveal the transport for ~3s so the user knows it's there, then auto-hide.
     this._showTransport();
@@ -214,7 +222,11 @@ export class App {
   private _buildScene(midi: MidiData) {
     const theme = this.tm.current;
     const w = this.sm.width, h = this.sm.height;
-    this.piano.build(w, h, theme);
+    // Never let a narrow piece blow the keys up: keep at least one white key per
+    // ~40 px of width (about 36 keys on a laptop, 15 on a phone).
+    const minWhite = Math.max(15, Math.min(52, Math.round(w / 40)));
+    const range = theme.piano.range === 'full' ? FULL_RANGE : fitRange(midi.tracks, minWhite);
+    this.piano.build(w, h, theme, range);
     this.rain.build(
       midi.tracks, w, h, this.piano.pianoTop, theme,
       (m) => this.piano.getKeyX(m),
@@ -223,6 +235,7 @@ export class App {
     this.particles.applyTheme(theme);
     // Ambient drifters fill the area above the piano keyboard.
     this.particles.setAmbientRegion(0, this.piano.pianoTop, w, h - this.piano.pianoTop);
+    this.particles.setKeyWidth(this.piano.keyWidth);
     // Sync beatsPerBar from the MIDI's time signature so bars line up by default.
     const sigNum = midi.timeSignature[0];
     if (sigNum !== theme.markers.beatsPerBar) {
@@ -251,7 +264,7 @@ export class App {
 
     const btn = document.getElementById('view-mode-btn');
     if (btn) {
-      btn.textContent = isPerformance ? 'PERF' : 'COMP';
+      btn.textContent = isPerformance ? '3D' : 'Keys';
       btn.classList.toggle('composition', !isPerformance);
     }
 

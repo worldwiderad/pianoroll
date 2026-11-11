@@ -75,6 +75,8 @@ export interface Theme {
     shimmer: number;
     /** Seconds the note keeps rendering past `noteEnd`, dimmed. */
     afterglow: number;
+    /** Lit leading edge and inner rim on each note (0 = flat, 1 = full). */
+    bevel: number;
   };
   trackColors: string[];
   piano: {
@@ -93,6 +95,10 @@ export interface Theme {
     beamGlow: number;
     /** When true, each note press fires a brief horizontal hit-line ripple. */
     hitRipple: boolean;
+    /** 'fit' frames the keyboard to the piece's notes; 'full' shows all 88 keys. */
+    range: 'fit' | 'full';
+    /** The felt strip along the back of the keys. */
+    feltColor: string;
   };
   effects: {
     bloom: boolean;
@@ -114,6 +120,8 @@ export interface Theme {
       sparks: boolean;
       embers: boolean;
       ambient: boolean;
+      /** The bright flash and shockwave ring where a note lands. */
+      impact: boolean;
     };
     filmGrain: boolean;
     filmGrainIntensity: number;

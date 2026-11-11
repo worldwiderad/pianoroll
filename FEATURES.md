@@ -34,7 +34,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The app boots straight into a **split-screen** with the settings panel on the left and a live demo running on the right canvas. Drop your MIDI file (and optionally an audio file) onto the Load tab and press **Start ▶**.
+Open `http://localhost:5173`, or use the hosted copy at [worldwiderad.github.io/pianoroll](https://worldwiderad.github.io/pianoroll/). A short demo plays behind a start card. Choose or drop a MIDI file, optionally add a recording, and press **Play**. **Change the look** opens the settings panel at any point.
 
 ---
 
@@ -43,7 +43,7 @@ Open `http://localhost:5173`. The app boots straight into a **split-screen** wit
 | Type | Formats | Notes |
 |---|---|---|
 | **MIDI** | `.mid`, `.midi` | Multi-track supported; tracks parsed via `@tonejs/midi`. Each track renders as its own coloured stream of notes. |
-| **Audio** | `.mp3`, `.wav`, `.ogg` (anything `decodeAudioData` supports) | Optional. Plays synchronised to MIDI position via `AudioContext.currentTime`. No built-in synth. |
+| **Audio** | `.mp3`, `.wav`, `.ogg` (anything `decodeAudioData` supports) | Optional. Plays synchronised to MIDI position via `AudioContext.currentTime`. Without one, the piece plays on a built-in SoundFont piano (or another instrument per track). |
 
 Files can be loaded via:
 - Drag-and-drop into either drop zone on the **Load** tab
@@ -88,13 +88,12 @@ Everything visible is rendered through a single Three.js `WebGLRenderer` driving
 
 ### Piano keyboard
 
-- Full **88-key** layout, A0 (MIDI 21) to C8 (MIDI 108)
-- Correct white/black layout with black keys top-aligned at the hit line so falling black notes meet their key visually
-- Two **style modes**, switched live:
-  - **Realistic** — cream white keys, near-black black keys, warm wood-toned background fill behind the keys
-  - **Neon** — dark keys (theme-configurable colours), high-contrast colour wash on press
-- Toggling style auto-swaps key colours so the difference is visible
-- **Depth press**: pressed keys briefly translate downward, giving a tactile feel
+- **Range**: *Fit to the piece* frames the keyboard from just below the lowest note to just above the highest (never fewer keys than the screen comfortably holds), or *All 88 keys*, A0 (MIDI 21) to C8 (MIDI 108)
+- Keys are drawn like a real piano rather than as flat blocks: ivory keys with rounded edges, a lit front lip and a shadow where they run under the fallboard; black keys with bevelled sides, a glossy top and a sloped front; soft shadows from the black keys onto the white ones; gaps between keys; and a felt strip along the back in a colour you choose
+- Black keys sit off-centre the way they do on a real keyboard (C♯ and F♯ to the left of the gap, D♯ and A♯ to the right)
+- The keyboard's height follows the key width, about six and a half widths per key, within limits of the screen height
+- Two **finishes**, switched live: *Ivory and ebony*, and *Dark glass* (dark keys that light up in the note's colour)
+- **Depth press**: pressed keys go down quickly and come back a little slower, like a real action
 - **Press glow** (toggleable): tints the pressed key with the source colour and fires a press beam
 - **Press colour source**: either pulled from the note's track colour, or a fixed custom colour
 
@@ -174,11 +173,14 @@ Every visual property of the visualiser is part of a single `Theme` object. Chan
 
 | Preset | Style | Look |
 |---|---|---|
-| **Classic** *(default)* | Realistic | Soft purple-tinted gradient, neon-coloured notes, cream piano, moderate bloom |
-| **Dark Neon** | Neon | Deep black background with starfield, vivid track colours, strong bloom, dark piano keys |
-| **Minimal** | Realistic | Flat dark grey background, pastel notes, no bloom, no effects |
-| **Cinematic** | Realistic | Deep blue gradient, amber/gold track palette, soft bloom, film grain, dust starfield |
-| **Pastel** | Realistic | Blue gradient, soft rainbow track palette, gentle bloom |
+| **Concert** *(default)* | Ivory and ebony | Warm dark stage, red felt, amber and blue notes, a light bloom and a few sparks |
+| **Neon** | Ivory and ebony | Saturated notes with trails over near-black with stars, strong bloom on the notes only |
+| **Studio** | Ivory and ebony | Flat graphite, bright distinct track colours, a beat and bar grid, no glow or particles |
+| **Paper** | Ivory and ebony | Ink on paper: a light background, ink-blue and black notes, no effects |
+| **Midnight** | Ivory and ebony | Deep blue gradient, cool pastel notes, soft bloom, drifting dust |
+| **Sunset** | Ivory and ebony | Plum-to-red gradient, warm capsule notes, film grain |
+
+The bloom threshold in every preset sits above the brightest part of an ivory key, so only the notes, beams and particles glow.
 
 ### Customisable properties
 
@@ -193,15 +195,18 @@ Every preset value is also exposed as a live setting:
 **Notes**
 - Shape: rectangle / rounded / capsule
 - Corner radius (only meaningful for rounded)
+- Edge highlight: a lit leading edge and a thin bright rim on each note
 - Opacity
 - Glow intensity (drives proximity brightness multiplier)
 - Trail length and opacity
 - Per-track colours (8 slots, also editable via the Tracks panel)
 
 **Piano**
-- Style: realistic / neon (auto-swaps default key colours on change)
+- Range: fit to the piece / all 88 keys
+- Finish: ivory and ebony / dark glass (auto-swaps default key colours on change)
 - White key colour
 - Black key colour
+- Felt colour
 - Press glow toggle (gates the key tint + beam)
 - Press colour source: from track / custom
 - Custom press colour
@@ -228,16 +233,17 @@ Every preset value is also exposed as a live setting:
 
 ## Settings UI
 
-A left-side panel that's open on boot and toggleable mid-playback via the transport's ⚙ button.
+A floating panel on the right (a bottom sheet on phones), opened from the start card's **Change the look** or the transport's settings button.
 
-- **Tabbed layout**: Load / Theme / Notes / Piano / Effects
+- **Tabs**: Music / Library / Look / Notes / Keys / 3D / Timeline / Effects, each with an icon
+- **Presets** are shown as small pictures of each look
 - **Sliders** show their live numeric value to the right of the label
 - **Toggles** are custom-built (no native checkboxes) for consistent dark UI
 - **Conditional visibility**:
   - Base-colour control only shows when gradient is OFF
   - Gradient stops only show when gradient is ON
   - Corner-radius slider only shows for `rounded` shape (hidden for rectangle and capsule)
-- **Drop overlay** is integrated — the Load tab contains both the MIDI and audio drop zones
+- The Music tab has the MIDI and recording drop zones and a Play button; the start card does the same job before anything is loaded
 - Live preview: the canvas behind the panel keeps rendering the demo while you tweak
 
 The panel itself uses the `--hud-opacity` variable, so setting HUD opacity also affects the panel's own background.
@@ -251,10 +257,10 @@ The panel itself uses the `--hud-opacity` variable, so setting HUD opacity also 
 | Renderer | **Three.js** WebGL via `WebGLRenderer` + `EffectComposer` |
 | Camera | `OrthographicCamera` (2D-style; depth ordering used for layering) |
 | MIDI parsing | `@tonejs/midi` |
-| Audio playback | Web Audio `AudioContext` + `AudioBufferSourceNode` (no synth) |
+| Audio playback | Web Audio `AudioContext` + `AudioBufferSourceNode`; `soundfont-player` when there is no recording |
 | UI | Vanilla HTML + CSS (no framework) |
 | Build | **Vite** + **TypeScript** |
-| Persistence | `localStorage` (theme JSON only) |
+| Persistence | `localStorage` for the current theme, IndexedDB for the project and theme library |
 
 **No backend.** Everything runs in the browser; MIDI/audio files never leave the machine.
 
@@ -273,7 +279,7 @@ src/
 │   └── AudioSync.ts       # AudioContext wrapper
 ├── scene/
 │   ├── SceneManager.ts    # renderer, composer, background, post-FX
-│   ├── Piano.ts           # 88-key keyboard mesh, hit line, beams
+│   ├── Piano.ts           # keyboard: key textures and shader, range fitting, felt, beams
 │   ├── NoteRain.ts        # per-track InstancedMesh + custom shader
 │   └── Particles.ts       # additive point particles
 ├── theme/
@@ -284,6 +290,7 @@ src/
 │   ├── FileLoader.ts      # drag-drop + file picker wiring
 │   ├── Transport.ts       # play/pause/seek HUD
 │   ├── TrackList.ts       # per-track sidebar
+│   ├── Welcome.ts         # start card
 │   └── SettingsPanel.ts   # tabbed settings UI
 └── demo/
     └── DemoData.ts        # short looping demo MIDI for boot preview

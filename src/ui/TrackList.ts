@@ -48,6 +48,7 @@ export class TrackList {
     this.open = next;
     this.panel.classList.toggle('open', next);
     if (next) window.dispatchEvent(new CustomEvent('panel-open', { detail: 'tracks' }));
+    document.body.classList.toggle('panel-open', next);
   }
 
   private _closeFromEvent() {

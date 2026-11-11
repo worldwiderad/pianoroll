@@ -30,6 +30,7 @@ export class FileLoader {
     this.loadedMidi = { data, bytes, fileName: file.name };
     el('midi-label').textContent = file.name;
     el('midi-zone').classList.add('loaded');
+    window.dispatchEvent(new CustomEvent('midi-chosen', { detail: this.loadedMidi }));
   }
 
   /** Programmatic load (e.g. from a saved project) — bypasses the picker UI. */
@@ -47,12 +48,13 @@ export class FileLoader {
     this.audioLoaded = true;
     el('audio-label').textContent = fileName;
     el('audio-zone').classList.add('loaded');
+    window.dispatchEvent(new CustomEvent('audio-chosen', { detail: fileName }));
   }
 
   clearAudio() {
     this.audio.clear();
     this.audioLoaded = false;
-    el('audio-label').textContent = 'Drop audio (optional)';
+    el('audio-label').textContent = 'Add a recording (optional)';
     el('audio-zone').classList.remove('loaded');
   }
 
@@ -75,6 +77,7 @@ export class FileLoader {
       this.audioLoaded = true;
       el('audio-label').textContent = file.name;
       el('audio-zone').classList.add('loaded');
+      window.dispatchEvent(new CustomEvent('audio-chosen', { detail: file.name }));
       this._checkReady();
     });
 
@@ -82,6 +85,7 @@ export class FileLoader {
       if (!this.loadedMidi) return;
       this.settings?.close();
       this.onReady(this.loadedMidi);
+      document.getElementById('play-btn')?.click();
     });
 
     document.addEventListener('dragover', e => e.preventDefault());
@@ -96,6 +100,7 @@ export class FileLoader {
           this.audioLoaded = true;
           el('audio-label').textContent = file.name;
           el('audio-zone').classList.add('loaded');
+          window.dispatchEvent(new CustomEvent('audio-chosen', { detail: file.name }));
         }
       }
       this._checkReady();

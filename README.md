@@ -1,30 +1,58 @@
 # Piano Roll
 
-A MIDI visualiser that runs in the browser: notes fall onto an 88-key keyboard in WebGL, with particles, glow and a theme system you can tune live. Drop in a MIDI file, and optionally a recording to play in sync, and export the result as an MP4.
-
-Built with TypeScript, Three.js and Vite.
+A MIDI visualiser that runs in the browser. Notes fall onto a keyboard drawn like a real piano, your own recording plays in sync (or a built-in piano if you don't have one), and the result exports as an MP4.
 
 **Try it:** [worldwiderad.github.io/pianoroll](https://worldwiderad.github.io/pianoroll/)
 
-## Running it
+![Concert preset: amber and blue notes falling onto an ivory and ebony keyboard](docs/concert.jpg)
+
+## Looks
+
+Six presets, and nearly everything in them can be changed live. Every preset uses the same realistic keyboard. The bloom is tuned to catch only the notes, beams and particles, so the keys never wash out.
+
+| Neon | Paper |
+|---|---|
+| ![Neon preset](docs/neon.jpg) | ![Paper preset](docs/paper.jpg) |
+
+- **Concert** (the default): a warm dark stage, red felt, amber and blue for the two hands
+- **Neon**: saturated light, trails and sparks over near-black
+- **Studio**: flat and exact, with distinct track colours and a beat grid
+- **Paper**: ink on paper
+- **Midnight** and **Sunset**
+
+## Using it
+
+![The start card and the settings panel](docs/start.jpg)
+
+1. Choose or drop a `.mid` file.
+2. Optionally add a recording (`.mp3`, `.wav` or `.ogg`) to play in sync.
+3. Press **Play**. `Space` plays and pauses, the arrow keys skip 5 seconds, and `V` switches to the 3D view.
+
+The keyboard frames itself to the piece's range by default, so a melody gets big keys instead of a sliver of an 88-key piano. *All 88 keys* is one setting away.
+
+<img src="docs/phone.jpg" alt="Piano Roll on a phone" width="260" align="right" />
+
+It works on a phone too: the panels become bottom sheets and the transport shrinks to what fits.
+
+## What else it does
+
+- **Keyboard**: shaded ivory and ebony keys, off-centre black keys as on a real piano, black-key shadows, a felt strip, and keys that dip and take the note's colour when played
+- **Notes**: per-track or per-pitch colours, rounded or capsule shapes, an edge highlight, trails, velocity-driven brightness and afterglow
+- **Effects**: bloom, sparks and embers, a drifting dust layer, an optional hit flash, vignette, film grain and chromatic aberration
+- **Sound**: your recording, or a SoundFont sampler with piano, strings, brass, woodwinds, synth pad, synth lead and drums per track
+- **Timeline**: keyframe track opacity and the 3D camera over the course of a piece
+- **Export**: MP4 through WebCodecs, rendered frame by frame at up to 4K and 60 fps (needs a browser with `VideoEncoder`, such as Chrome or Edge)
+- **Library**: projects and looks saved in the browser (IndexedDB), and looks can be saved to and opened from a file
+
+[FEATURES.md](FEATURES.md) goes through every setting.
+
+## Running it locally
 
 ```sh
 npm install
 npm run dev
 ```
 
-Then open http://localhost:5173. A short demo plays on load. Drag a `.mid` file (and an `.mp3`, `.wav` or `.ogg` if you have one) onto the page and press **Start**.
-
-## What it does
-
-- **Falling notes** per track, each in its own colour, onto a keyboard that lights and presses with the music.
-- **Effects:** press beams, hit-line ripples, impact bursts, particles, bloom and background media.
-- **Sound:** your own audio file, kept in sync with the MIDI clock, or a SoundFont sampler when there isn't one. It has piano, strings, brass, woodwinds, synth pad, synth lead and drums.
-- **Themes:** built-in presets, and nearly every colour, size and effect is adjustable. Themes import and export as JSON.
-- **Timeline keyframes** for changing settings over the course of a piece.
-- **Video export** to MP4 with WebCodecs, rendered frame by frame at the size you pick. This needs a browser with `VideoEncoder`, such as Chrome or Edge.
-- **Project library** in IndexedDB, so loaded pieces and themes are still there next time.
-
-[FEATURES.md](FEATURES.md) goes through every setting.
+Then open http://localhost:5173. Built with TypeScript, Three.js and Vite; no backend, and files never leave your machine.
 
 `3d-preview/3d-early-prototype.html` is the single-file prototype the app grew out of.

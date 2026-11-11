@@ -1,188 +1,395 @@
 import * as THREE from 'three';
 import type { Theme } from '../theme/types';
+import type { MidiTrack } from '../midi/MidiLoader';
 
-const FIRST_MIDI = 21;
-const KEY_COUNT = 88;
+export const FULL_RANGE = { lo: 21, hi: 108 } as const;
+export interface KeyRange { lo: number; hi: number }
 
-// Standard MIDI semitone classes (from C): C#=1, D#=3, F#=6, G#=8, A#=10
+// Semitone classes from C: C#=1, D#=3, F#=6, G#=8, A#=10
 const BLACK_SEMITONES = new Set([1, 3, 6, 8, 10]);
 export function isBlack(midi: number): boolean {
-  return BLACK_SEMITONES.has(midi % 12);
+  return BLACK_SEMITONES.has(((midi % 12) + 12) % 12);
 }
+
+// On a real keyboard the black keys are not centred on the gap between two
+// whites: C# and F# sit left of it, D# and A# right, G# in the middle.
+const BLACK_OFFSET: Record<number, number> = { 1: -0.1, 3: 0.1, 6: -0.13, 8: 0, 10: 0.13 };
+
+const WHITE_IN_OCTAVE = [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1];
+/** Number of white keys strictly below `midi`. */
+function whitesBelow(midi: number): number {
+  const oct = Math.floor(midi / 12);
+  let n = oct * 7;
+  for (let s = 0; s < midi - oct * 12; s++) n += WHITE_IN_OCTAVE[s];
+  return n;
+}
+
+/**
+ * The keyboard range that frames a piece: its lowest to highest note, padded,
+ * widened to at least `minWhiteKeys` white keys, and snapped to white keys at
+ * both ends.
+ */
+export function fitRange(tracks: MidiTrack[], minWhiteKeys = 22): KeyRange {
+  const minSpan = Math.ceil(minWhiteKeys * 12 / 7);
+  let lo = Infinity, hi = -Infinity;
+  for (const t of tracks) for (const n of t.notes) { if (n.midi < lo) lo = n.midi; if (n.midi > hi) hi = n.midi; }
+  if (!isFinite(lo)) return { ...FULL_RANGE };
+  lo -= 3; hi += 3;
+  const span = hi - lo;
+  if (span < minSpan) { const grow = (minSpan - span) / 2; lo -= Math.ceil(grow); hi += Math.floor(grow); }
+  if (lo < FULL_RANGE.lo) { hi += FULL_RANGE.lo - lo; lo = FULL_RANGE.lo; }
+  if (hi > FULL_RANGE.hi) { lo -= hi - FULL_RANGE.hi; hi = FULL_RANGE.hi; }
+  lo = Math.max(FULL_RANGE.lo, lo); hi = Math.min(FULL_RANGE.hi, hi);
+  while (isBlack(lo) && lo > FULL_RANGE.lo) lo--;
+  while (isBlack(hi) && hi < FULL_RANGE.hi) hi++;
+  return { lo, hi };
+}
+
+// ── Key surface textures ──────────────────────────────────────────────────
+// Drawn once per build on a canvas, in the theme's own key colours, so the
+// shading (felt shadow, rounded edges, the front lip, the black keys' bevel and
+// gloss) is part of the key rather than a flat fill.
+
+function canvas(w: number, h: number) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return { c, g: c.getContext('2d')! };
+}
+
+function toTexture(c: HTMLCanvasElement): THREE.CanvasTexture {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  return t;
+}
+
+function shade(hex: string, amt: number): string {
+  // amt > 0 mixes toward white, < 0 toward black
+  const c = new THREE.Color(hex);
+  const target = amt > 0 ? new THREE.Color(1, 1, 1) : new THREE.Color(0, 0, 0);
+  return '#' + c.lerp(target, Math.abs(amt)).getHexString();
+}
+
+function whiteKeyTexture(color: string, neon: boolean): THREE.CanvasTexture {
+  const W = 64, H = 512;
+  const { c, g } = canvas(W, H);
+  g.fillStyle = color;
+  g.fillRect(0, 0, W, H);
+  if (neon) {
+    // Dark glass: a faint sheen and a thin bright rim along the front edge.
+    const sheen = g.createLinearGradient(0, 0, 0, H);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.00)');
+    sheen.addColorStop(0.75, 'rgba(255,255,255,0.04)');
+    sheen.addColorStop(1, 'rgba(255,255,255,0.10)');
+    g.fillStyle = sheen; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(0, H - 6, W, 2);
+    g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(0, 0, 2, H); g.fillRect(W - 2, 0, 2, H);
+    return toTexture(c);
+  }
+  // Shadow where the key runs under the felt and the fallboard.
+  const back = g.createLinearGradient(0, 0, 0, H * 0.22);
+  back.addColorStop(0, 'rgba(40,24,10,0.42)');
+  back.addColorStop(1, 'rgba(40,24,10,0)');
+  g.fillStyle = back; g.fillRect(0, 0, W, H * 0.22);
+  // A broad soft highlight across the playing area.
+  const body = g.createLinearGradient(0, 0, 0, H);
+  body.addColorStop(0.35, 'rgba(255,255,255,0)');
+  body.addColorStop(0.8, 'rgba(255,255,255,0.10)');
+  body.addColorStop(0.93, 'rgba(255,255,255,0.02)');
+  g.fillStyle = body; g.fillRect(0, 0, W, H);
+  // Rounded long edges.
+  const edge = g.createLinearGradient(0, 0, W, 0);
+  edge.addColorStop(0, 'rgba(60,40,20,0.30)');
+  edge.addColorStop(0.07, 'rgba(60,40,20,0.0)');
+  edge.addColorStop(0.93, 'rgba(60,40,20,0.0)');
+  edge.addColorStop(1, 'rgba(60,40,20,0.34)');
+  g.fillStyle = edge; g.fillRect(0, 0, W, H);
+  // Front lip: a bright bevel, then the key's front face falling away.
+  const lipTop = H * 0.945;
+  g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(0, lipTop, W, 3);
+  const face = g.createLinearGradient(0, lipTop + 3, 0, H);
+  face.addColorStop(0, 'rgba(70,50,30,0.18)');
+  face.addColorStop(1, 'rgba(50,34,20,0.42)');
+  g.fillStyle = face; g.fillRect(0, lipTop + 3, W, H - lipTop - 3);
+  return toTexture(c);
+}
+
+function blackKeyTexture(color: string, neon: boolean): THREE.CanvasTexture {
+  const W = 64, H = 512;
+  const { c, g } = canvas(W, H);
+  g.fillStyle = color;
+  g.fillRect(0, 0, W, H);
+  if (neon) {
+    g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(4, H - 10, W - 8, 2);
+    g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 2; g.strokeRect(1, 1, W - 2, H - 2);
+    return toTexture(c);
+  }
+  // Seen from above, a black key is a narrower top surface with bevelled
+  // sides, and a sloped front that catches the light.
+  const inset = W * 0.14;
+  const top = shade(color, 0.10);
+  const topGrad = g.createLinearGradient(0, 0, 0, H);
+  topGrad.addColorStop(0, shade(color, 0.02));
+  topGrad.addColorStop(0.7, top);
+  topGrad.addColorStop(0.86, shade(color, 0.16));
+  g.fillStyle = topGrad;
+  g.fillRect(inset, 0, W - inset * 2, H * 0.88);
+  // Gloss: a soft streak down the top surface.
+  const gloss = g.createLinearGradient(inset, 0, W - inset, 0);
+  gloss.addColorStop(0, 'rgba(255,255,255,0)');
+  gloss.addColorStop(0.35, 'rgba(255,255,255,0.10)');
+  gloss.addColorStop(0.5, 'rgba(255,255,255,0.04)');
+  gloss.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gloss; g.fillRect(inset, H * 0.18, W - inset * 2, H * 0.66);
+  // Sloped front face.
+  const front = g.createLinearGradient(0, H * 0.88, 0, H);
+  front.addColorStop(0, shade(color, 0.32));
+  front.addColorStop(1, shade(color, 0.06));
+  g.fillStyle = front; g.fillRect(inset * 0.6, H * 0.88, W - inset * 1.2, H * 0.12);
+  // Edge bevels darken toward the outside.
+  const sides = g.createLinearGradient(0, 0, W, 0);
+  sides.addColorStop(0, 'rgba(0,0,0,0.55)');
+  sides.addColorStop(0.14, 'rgba(0,0,0,0)');
+  sides.addColorStop(0.86, 'rgba(0,0,0,0)');
+  sides.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = sides; g.fillRect(0, 0, W, H);
+  return toTexture(c);
+}
+
+let _shadowTex: THREE.Texture | null = null;
+function shadowTexture(): THREE.Texture {
+  if (_shadowTex) return _shadowTex;
+  const { c, g } = canvas(64, 256);
+  g.filter = 'blur(7px)';
+  g.fillStyle = 'rgba(0,0,0,1)';
+  g.fillRect(14, -20, 36, 250);
+  _shadowTex = new THREE.CanvasTexture(c);
+  return _shadowTex;
+}
+
+let _fadeTex: THREE.Texture | null = null;
+/** White at the bottom, transparent at the top. */
+function fadeTexture(): THREE.Texture {
+  if (_fadeTex) return _fadeTex;
+  const { c, g } = canvas(1, 64);
+  const grad = g.createLinearGradient(0, 0, 0, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,0)');
+  grad.addColorStop(1, 'rgba(255,255,255,1)');
+  g.fillStyle = grad; g.fillRect(0, 0, 1, 64);
+  _fadeTex = new THREE.CanvasTexture(c);
+  return _fadeTex;
+}
+
+const KEY_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+// The press tint keeps the key's own shading (it multiplies the surface's
+// luminance), so a pressed ivory key still has its lip and edges.
+const KEY_FRAG = /* glsl */ `
+uniform sampler2D map;
+uniform vec3 tint;
+uniform float press;
+uniform float tintAmt;
+uniform float glowAmt;
+varying vec2 vUv;
+void main() {
+  vec3 base = texture2D(map, vUv).rgb;
+  float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+  vec3 tinted = tint * (0.22 + 0.95 * lum) + base * 0.12;
+  vec3 col = mix(base, tinted, press * tintAmt);
+  col *= 1.0 - press * 0.12 * (1.0 - vUv.y);
+  col += tint * press * glowAmt;
+  gl_FragColor = vec4(col, 1.0);
+}`;
 
 interface KeyData {
   mesh: THREE.Mesh;
-  mat: THREE.MeshBasicMaterial;
+  mat: THREE.ShaderMaterial;
   isBlack: boolean;
-  baseColor: THREE.Color;
-  pressColor: THREE.Color;
   baseY: number;
-  midi: number;
+  press: number;
+  target: number;
 }
 
-interface Beam {
+interface Flash {
   mesh: THREE.Mesh;
   mat: THREE.MeshBasicMaterial;
-  intensity: number; // 0–1, decays each frame
-  color: THREE.Color;
-}
-
-export const PIANO_HEIGHT_FRACTION = 0.19;
-
-// Shared gradient texture: white at y=0, transparent at y=1
-let _beamTex: THREE.Texture | null = null;
-function beamTexture(): THREE.Texture {
-  if (_beamTex) return _beamTex;
-  const c = document.createElement('canvas');
-  c.width = 1; c.height = 64;
-  const ctx = c.getContext('2d')!;
-  const g = ctx.createLinearGradient(0, 0, 0, 64);
-  g.addColorStop(0, 'rgba(255,255,255,0)');
-  g.addColorStop(1, 'rgba(255,255,255,1)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 1, 64);
-  _beamTex = new THREE.CanvasTexture(c);
-  return _beamTex;
+  intensity: number;
 }
 
 export class Piano {
   group: THREE.Group;
   private keys: Map<number, KeyData> = new Map();
-  private beams: Map<number, Beam> = new Map();
-  private ripples: Map<number, Beam> = new Map(); // re-uses Beam shape (mesh + mat + intensity)
+  private beams: Map<number, Flash> = new Map();
+  private ripples: Map<number, Flash> = new Map();
+  private textures: THREE.Texture[] = [];
   private hitLineMat!: THREE.MeshBasicMaterial;
   private hitGlowMat!: THREE.MeshBasicMaterial;
-  private whiteCount = 0;
+  private range: KeyRange = { ...FULL_RANGE };
+  private whiteCount = 52;
+  private keyW = 0;
   private sceneW = 0;
   private sceneH = 0;
+  private pressDepth = 0;
   pianoTop = 0;
-  // Per-element bloom multipliers; live-updated from theme.
   private hitLineGlow = 1;
   private beamGlow = 1;
   private hitRipple = false;
+  private tintAmt = 0.55;
+  private glowAmt = 0;
 
   constructor(scene: THREE.Scene) {
     this.group = new THREE.Group();
     scene.add(this.group);
   }
 
-  build(sceneW: number, sceneH: number, theme: Theme) {
-    // Dispose old
+  private dispose() {
     this.group.children.slice().forEach(c => {
-      (c as THREE.Mesh).geometry?.dispose();
-      ((c as THREE.Mesh).material as THREE.Material)?.dispose();
+      const m = c as THREE.Mesh;
+      m.geometry?.dispose();
+      (m.material as THREE.Material)?.dispose();
       this.group.remove(c);
     });
+    this.textures.forEach(t => t.dispose());
+    this.textures = [];
     this.keys.clear();
     this.beams.clear();
     this.ripples.clear();
+  }
 
+  build(sceneW: number, sceneH: number, theme: Theme, range: KeyRange = this.range) {
+    this.dispose();
     this.sceneW = sceneW;
     this.sceneH = sceneH;
+    this.range = { ...range };
+    const { lo, hi } = this.range;
+
     this.whiteCount = 0;
-    for (let m = FIRST_MIDI; m < FIRST_MIDI + KEY_COUNT; m++) {
-      if (!isBlack(m)) this.whiteCount++;
-    }
+    for (let m = lo; m <= hi; m++) if (!isBlack(m)) this.whiteCount++;
+    const keyW = this.keyW = sceneW / this.whiteCount;
 
-    const pianoH = sceneH * PIANO_HEIGHT_FRACTION;
-    const keyW = sceneW / this.whiteCount;
-    const whiteH = pianoH;
-    const blackH = pianoH * 0.62;
+    // A white key is about six and a half times as long as it is wide. Follow
+    // that when the range allows, within sensible limits of the screen height.
+    const pianoH = Math.min(sceneH * 0.24, Math.max(sceneH * 0.15, keyW * 6.2));
+    const blackH = pianoH * 0.63;
     const blackW = keyW * 0.56;
+    const gap = Math.max(1, Math.min(2, keyW * 0.06));
+    const feltH = Math.max(3, pianoH * 0.035);
     this.pianoTop = pianoH;
+    this.pressDepth = Math.max(1.5, pianoH * 0.012);
 
-    const realistic = theme.piano.style === 'realistic';
+    const neon = theme.piano.style === 'neon';
+    this.tintAmt = theme.piano.pressedGlow ? (neon ? 0.85 : 0.55) : 0;
+    this.glowAmt = theme.piano.pressedGlow && neon ? 0.35 : 0;
 
-    // Dark background fill (shows as gaps between white keys and as side of piano)
-    const bgColor = realistic ? 0x1a1410 : 0x06060c;
-    const bgGeo = new THREE.PlaneGeometry(sceneW, pianoH);
-    const bgMat = new THREE.MeshBasicMaterial({ color: bgColor });
-    const bg = new THREE.Mesh(bgGeo, bgMat);
-    bg.position.set(sceneW / 2, pianoH / 2, -0.5);
-    this.group.add(bg);
+    // Key bed: shows through the gaps between white keys.
+    const bed = new THREE.Mesh(
+      new THREE.PlaneGeometry(sceneW, pianoH),
+      new THREE.MeshBasicMaterial({ color: neon ? 0x030308 : 0x0a0705 }),
+    );
+    bed.position.set(sceneW / 2, pianoH / 2, -0.5);
+    this.group.add(bed);
 
-    const whiteBase = new THREE.Color(theme.piano.whiteKeyColor);
-    const blackBase = new THREE.Color(theme.piano.blackKeyColor);
+    const whiteTex = whiteKeyTexture(theme.piano.whiteKeyColor, neon);
+    const blackTex = blackKeyTexture(theme.piano.blackKeyColor, neon);
+    this.textures.push(whiteTex, blackTex);
 
-    let whiteIdx = 0;
-    for (let midi = FIRST_MIDI; midi < FIRST_MIDI + KEY_COUNT; midi++) {
+    const makeKeyMat = (map: THREE.Texture) => new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: map },
+        tint: { value: new THREE.Color(1, 1, 1) },
+        press: { value: 0 },
+        tintAmt: { value: this.tintAmt },
+        glowAmt: { value: this.glowAmt },
+      },
+      vertexShader: KEY_VERT,
+      fragmentShader: KEY_FRAG,
+    });
+
+    const shadowTex = shadowTexture();
+    for (let midi = lo; midi <= hi; midi++) {
       const black = isBlack(midi);
-      const w = black ? blackW : keyW - 1.5;
-      const h = black ? blackH : whiteH;
-      // Black key X: midpoint between adjacent white keys (whiteIdx = next white index)
-      const x = black ? whiteIdx * keyW : whiteIdx * keyW + keyW / 2;
-      // Black keys top-aligned with the hit line so falling black notes meet them.
-      // White keys span the full piano area.
+      const x = this.getKeyX(midi);
+      const w = black ? blackW : keyW - gap;
+      const h = black ? blackH : pianoH;
       const y = black ? pianoH - h / 2 : h / 2;
       const z = black ? 2.5 : 1.0;
 
-      const baseColor = (black ? blackBase : whiteBase).clone();
-      const pressColor = baseColor.clone(); // will be set on press
-
-      const geo = new THREE.BoxGeometry(w, h, 1);
-      const mat = new THREE.MeshBasicMaterial({ color: baseColor });
-      const mesh = new THREE.Mesh(geo, mat);
+      const mat = makeKeyMat(black ? blackTex : whiteTex);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, 1), mat);
       mesh.position.set(x, y, z);
       this.group.add(mesh);
-      this.keys.set(midi, { mesh, mat, isBlack: black, baseColor, pressColor, baseY: y, midi });
+      this.keys.set(midi, { mesh, mat, isBlack: black, baseY: y, press: 0, target: 0 });
 
-      // Beam plane above hit line — bottom-anchored, gradient fades upward
+      if (black && !neon) {
+        // Soft shadow the black key casts down and to the right onto the whites.
+        const sh = new THREE.Mesh(
+          new THREE.PlaneGeometry(w * 1.7, h * 1.06),
+          new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: shadowTex, transparent: true, opacity: 0.55, depthWrite: false }),
+        );
+        sh.position.set(x + w * 0.16, y - h * 0.05, 1.8);
+        this.group.add(sh);
+      }
+
+      // Press beam: rises from the hit line and fades upward.
       const beamH = pianoH * 0.9;
-      const beamGeo = new THREE.PlaneGeometry(w * 0.9, beamH);
       const beamMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        map: beamTexture(),
-        transparent: true,
-        opacity: 0,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
+        color: 0xffffff, map: fadeTexture(), transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
       });
-      const beamMesh = new THREE.Mesh(beamGeo, beamMat);
-      // Bottom of beam at pianoTop, so center is at pianoTop + beamH/2
-      beamMesh.position.set(x, pianoH + beamH / 2, 3.5);
-      this.group.add(beamMesh);
-      this.beams.set(midi, { mesh: beamMesh, mat: beamMat, intensity: 0, color: new THREE.Color() });
+      const beam = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.9, beamH), beamMat);
+      beam.position.set(x, pianoH + beamH / 2, 3.5);
+      this.group.add(beam);
+      this.beams.set(midi, { mesh: beam, mat: beamMat, intensity: 0 });
 
-      // Hit-line ripple: small horizontal flash right at the hit line, fired on press.
-      const rippleGeo = new THREE.PlaneGeometry(w * 1.8, 8);
       const rippleMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
+        color: 0xffffff, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
       });
-      const rippleMesh = new THREE.Mesh(rippleGeo, rippleMat);
-      rippleMesh.position.set(x, pianoH, 4.2);
-      this.group.add(rippleMesh);
-      this.ripples.set(midi, { mesh: rippleMesh, mat: rippleMat, intensity: 0, color: new THREE.Color() });
-
-      if (!black) whiteIdx++;
+      const ripple = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.8, 8), rippleMat);
+      ripple.position.set(x, pianoH, 4.2);
+      this.group.add(ripple);
+      this.ripples.set(midi, { mesh: ripple, mat: rippleMat, intensity: 0 });
     }
 
-    // Thin bright hit line
-    const hitLineGeo = new THREE.PlaneGeometry(sceneW, 2);
+    // Shadow the fallboard throws across the back of the keys.
+    const slipH = pianoH * 0.09;
+    const slip = new THREE.Mesh(
+      new THREE.PlaneGeometry(sceneW, slipH),
+      new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: fadeTexture(), transparent: true, opacity: neon ? 0.5 : 0.38, depthWrite: false }),
+    );
+    // alphaMap is opaque at the bottom; flip so it is darkest at the felt.
+    slip.rotation.z = Math.PI;
+    slip.position.set(sceneW / 2, pianoH - feltH - slipH / 2, 2.9);
+    this.group.add(slip);
+
+    // Felt strip along the back of the keys.
+    const felt = new THREE.Mesh(
+      new THREE.PlaneGeometry(sceneW, feltH),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(theme.piano.feltColor) }),
+    );
+    felt.position.set(sceneW / 2, pianoH - feltH / 2, 3);
+    this.group.add(felt);
+
+    // Hit line along the top of the felt, and a soft glow behind it.
     this.hitLineMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.1,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
+      color: 0xffffff, transparent: true, opacity: 0.1,
+      blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    const hitLine = new THREE.Mesh(hitLineGeo, this.hitLineMat);
+    const hitLine = new THREE.Mesh(new THREE.PlaneGeometry(sceneW, 1.5), this.hitLineMat);
     hitLine.position.set(sceneW / 2, pianoH, 4);
     this.group.add(hitLine);
 
-    // Wider soft glow behind the hit line
-    const hitGlowGeo = new THREE.PlaneGeometry(sceneW, 18);
     this.hitGlowMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.05,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
+      color: 0xffffff, transparent: true, opacity: 0.05,
+      blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    const hitGlow = new THREE.Mesh(hitGlowGeo, this.hitGlowMat);
+    const hitGlow = new THREE.Mesh(new THREE.PlaneGeometry(sceneW, 18), this.hitGlowMat);
     hitGlow.position.set(sceneW / 2, pianoH, 3.9);
     this.group.add(hitGlow);
   }
@@ -190,46 +397,27 @@ export class Piano {
   pressKey(midi: number, trackColor: THREE.Color, theme: Theme) {
     const k = this.keys.get(midi);
     if (!k) return;
-
+    k.target = 1;
+    k.mat.uniforms.tint.value.copy(trackColor);
     if (theme.piano.pressedGlow) {
-      if (theme.piano.style === 'realistic') {
-        if (k.isBlack) {
-          // Black key glows with the track colour at moderate brightness
-          k.mat.color.set('#1a1a18').lerp(trackColor, 0.7).multiplyScalar(0.75);
-        } else {
-          // White key takes a soft tint without blowing out bloom
-          k.mat.color.set('#f0ede0').lerp(trackColor, 0.45).multiplyScalar(0.7);
-        }
-      } else {
-        k.mat.color.set(trackColor).multiplyScalar(k.isBlack ? 1.0 : 0.7);
-      }
       const b = this.beams.get(midi);
-      if (b) {
-        b.color.copy(trackColor);
-        b.intensity = 1.0;
-        b.mat.color.copy(trackColor);
-      }
+      if (b) { b.intensity = 1; b.mat.color.copy(trackColor); }
       if (this.hitRipple) {
         const r = this.ripples.get(midi);
-        if (r) {
-          r.intensity = 1.0;
-          r.mat.color.copy(trackColor);
-        }
+        if (r) { r.intensity = 1; r.mat.color.copy(trackColor); }
       }
     }
-
-    if (theme.piano.depthEffect) k.mesh.position.y = k.baseY - 5;
+    this.depthEffect = theme.piano.depthEffect;
   }
+
+  private depthEffect = true;
 
   releaseKey(midi: number) {
     const k = this.keys.get(midi);
-    if (!k) return;
-    k.mat.color.copy(k.baseColor);
-    k.mesh.position.y = k.baseY;
+    if (k) k.target = 0;
   }
 
   update(dt: number, activeCount: number) {
-    // Hit line: very subtle pulse, modulated by per-element hitLineGlow multiplier.
     if (this.hitLineMat) {
       const target = (0.1 + Math.min(activeCount, 12) * 0.007) * this.hitLineGlow;
       this.hitLineMat.opacity += (target - this.hitLineMat.opacity) * Math.min(dt * 14, 1);
@@ -239,7 +427,16 @@ export class Piano {
       this.hitGlowMat.opacity += (target - this.hitGlowMat.opacity) * Math.min(dt * 10, 1);
     }
 
-    // Decay beams — peak opacity 0.16 × beamGlow, decays quickly to avoid stacking.
+    // Keys go down fast and come back a little slower, like a real action.
+    const down = Math.min(dt * 40, 1), up = Math.min(dt * 18, 1);
+    this.keys.forEach(k => {
+      if (k.press === k.target) return;
+      k.press += (k.target - k.press) * (k.target > k.press ? down : up);
+      if (Math.abs(k.target - k.press) < 0.004) k.press = k.target;
+      k.mat.uniforms.press.value = k.press;
+      k.mesh.position.y = k.baseY - (this.depthEffect ? this.pressDepth * k.press : 0);
+    });
+
     const decay = Math.pow(0.04, dt);
     const beamPeak = 0.16 * this.beamGlow;
     this.beams.forEach(b => {
@@ -249,7 +446,6 @@ export class Piano {
       b.mat.opacity = b.intensity * beamPeak;
     });
 
-    // Ripples decay faster than beams (brief flash on press)
     const rippleDecay = Math.pow(0.001, dt);
     this.ripples.forEach(r => {
       if (r.intensity <= 0) return;
@@ -259,35 +455,36 @@ export class Piano {
     });
   }
 
-  private lastStyle = '';
-  private lastWhite = '';
-  private lastBlack = '';
+  private lastKey = '';
 
-  /** Full rebuild using stored dimensions */
+  /** Full rebuild using the stored dimensions and range. */
   rebuild(theme: Theme) {
-    if (this.sceneW > 0 && this.sceneH > 0) this.build(this.sceneW, this.sceneH, theme);
+    if (this.sceneW > 0 && this.sceneH > 0) this.build(this.sceneW, this.sceneH, theme, this.range);
   }
 
   applyTheme(theme: Theme) {
-    const needsRebuild =
-      this.lastStyle !== theme.piano.style ||
-      this.lastWhite !== theme.piano.whiteKeyColor ||
-      this.lastBlack !== theme.piano.blackKeyColor;
-    this.lastStyle = theme.piano.style;
-    this.lastWhite = theme.piano.whiteKeyColor;
-    this.lastBlack = theme.piano.blackKeyColor;
-    if (needsRebuild) this.rebuild(theme);
-    this.hitLineGlow = theme.piano.hitLineGlow;
-    this.beamGlow = theme.piano.beamGlow;
-    this.hitRipple = theme.piano.hitRipple;
-    // Non-structural fields (pressedGlow, depthEffect, pressColorSource) read on press
+    const p = theme.piano;
+    const key = [p.style, p.whiteKeyColor, p.blackKeyColor, p.feltColor, p.pressedGlow].join('|');
+    if (key !== this.lastKey) { this.lastKey = key; this.rebuild(theme); }
+    this.hitLineGlow = p.hitLineGlow;
+    this.beamGlow = p.beamGlow;
+    this.hitRipple = p.hitRipple;
+    this.depthEffect = p.depthEffect;
   }
 
+  /** Centre x of any key, including ones outside the visible range. */
   getKeyX(midi: number): number {
-    return this.keys.get(midi)?.mesh.position.x ?? 0;
+    const kw = this.keyW || this.sceneW / this.whiteCount;
+    const dx = (whitesBelow(midi) - whitesBelow(this.range.lo)) * kw;
+    if (!isBlack(midi)) return dx + kw / 2;
+    return dx + (BLACK_OFFSET[((midi % 12) + 12) % 12] ?? 0) * kw;
   }
 
   get keyWidth(): number {
-    return this.sceneW / this.whiteCount;
+    return this.keyW || this.sceneW / this.whiteCount;
+  }
+
+  get currentRange(): KeyRange {
+    return { ...this.range };
   }
 }

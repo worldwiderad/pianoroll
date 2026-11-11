@@ -18,7 +18,7 @@ export interface LibraryController {
 export class SettingsPanel {
   private tm: ThemeManager;
   private panel = el<HTMLDivElement>('left-panel');
-  private isOpen = true; // open on boot
+  private isOpen = false; // the welcome card is the first screen
   private libraryCtl: LibraryController | null = null;
 
   constructor(tm: ThemeManager) {
@@ -35,7 +35,7 @@ export class SettingsPanel {
     el<HTMLButtonElement>('settings-btn').addEventListener('click', () => this.toggle());
 
     window.addEventListener('panel-open', (e) => {
-      if ((e as CustomEvent).detail !== 'settings') this.close();
+      if ((e as CustomEvent).detail !== 'settings') { this.isOpen = false; this.panel.classList.remove('open'); }
     });
   }
 
@@ -44,21 +44,12 @@ export class SettingsPanel {
     container.innerHTML = '';
     const labels = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     this.tm.current.notes.pitchColors.forEach((color, i) => {
-      const wrap = document.createElement('div');
-      wrap.style.display = 'flex';
-      wrap.style.flexDirection = 'column';
-      wrap.style.alignItems = 'center';
-      wrap.style.gap = '2px';
+      const wrap = document.createElement('label');
+      wrap.className = 'swatch';
       const input = document.createElement('input');
       input.type = 'color';
       input.value = color;
       input.title = `Pitch ${labels[i]}`;
-      input.style.width = '28px';
-      input.style.height = '22px';
-      input.style.borderRadius = '5px';
-      input.style.border = '1px solid rgba(255,255,255,0.18)';
-      input.style.cursor = 'pointer';
-      input.style.padding = '0';
       input.addEventListener('input', e => {
         const colors = [...this.tm.current.notes.pitchColors];
         colors[i] = (e.target as HTMLInputElement).value;
@@ -66,8 +57,6 @@ export class SettingsPanel {
       });
       const label = document.createElement('span');
       label.textContent = labels[i];
-      label.style.fontSize = '0.65rem';
-      label.style.color = 'rgba(255,255,255,0.4)';
       wrap.append(input, label);
       container.appendChild(wrap);
     });
@@ -80,14 +69,7 @@ export class SettingsPanel {
       const input = document.createElement('input');
       input.type = 'color';
       input.value = color;
-      input.className = 'track-color';
       input.title = `Track ${i + 1}`;
-      input.style.width = '28px';
-      input.style.height = '22px';
-      input.style.borderRadius = '5px';
-      input.style.border = '1px solid rgba(255,255,255,0.18)';
-      input.style.cursor = 'pointer';
-      input.style.padding = '0';
       input.addEventListener('input', e => {
         const colors = [...this.tm.current.trackColors];
         colors[i] = (e.target as HTMLInputElement).value;
@@ -103,8 +85,9 @@ export class SettingsPanel {
     this.panel.classList.add('open');
     // Both side panels live on the right — close the other one when opening this.
     window.dispatchEvent(new CustomEvent('panel-open', { detail: 'settings' }));
+    document.body.classList.add('panel-open');
   }
-  close() { this.isOpen = false; this.panel.classList.remove('open'); }
+  close() { this.isOpen = false; this.panel.classList.remove('open'); document.body.classList.remove('panel-open'); }
 
   /** Show/hide settings rows + tab buttons appropriate to the active view mode. */
   setViewMode(mode: 'performance' | 'composition') {
@@ -246,9 +229,20 @@ export class SettingsPanel {
     this.tm.getPresets().forEach((preset, i) => {
       const btn = document.createElement('button');
       btn.className = 'preset-btn';
-      btn.textContent = preset.name;
+      btn.type = 'button';
+      const bg = preset.background;
+      const sky = bg.gradient
+        ? `linear-gradient(0deg, ${bg.gradientStops[0]}, ${bg.gradientStops[1]} 50%, ${bg.gradientStops[2]})`
+        : bg.color;
+      const bars = [0, 1, 2, 3].map(j => {
+        const c = preset.trackColors[j % 2 === 0 ? 0 : 1] ?? '#fff';
+        const h = [16, 9, 22, 12][j];
+        const glow = preset.effects.bloom ? `box-shadow:0 0 8px ${c};` : '';
+        return `<i style="left:${12 + j * 17}%;height:${h}px;background:${c};${glow}"></i>`;
+      }).join('');
+      btn.innerHTML = `<div class="preset-swatch" style="background:${sky};--wk:${preset.piano.whiteKeyColor};--felt:${preset.piano.feltColor}">${bars}<b></b></div><span>${preset.name}</span>`;
       btn.dataset.idx = String(i);
-      if (i === 0) btn.classList.add('active');
+      if (preset.name === this.tm.current.name) btn.classList.add('active');
       btn.addEventListener('click', () => {
         this.tm.applyPreset(preset);
         // Sync from the current theme (not the preset) — applyPreset preserves
@@ -350,6 +344,7 @@ export class SettingsPanel {
     el('vel-mod-enabled').addEventListener('change', e => apply({ notes: { ...t().notes, velocityModulation: { ...t().notes.velocityModulation, enabled: (e.target as HTMLInputElement).checked } } }));
     this._slider('vel-min', 'vel-min-v', v => { const n = v/100; this._setVal('vel-min-v', n.toFixed(2)); apply({ notes: { ...t().notes, velocityModulation: { ...t().notes.velocityModulation, minBrightness: n } } }); });
     this._slider('vel-max', 'vel-max-v', v => { const n = v/100; this._setVal('vel-max-v', n.toFixed(2)); apply({ notes: { ...t().notes, velocityModulation: { ...t().notes.velocityModulation, maxBrightness: n } } }); });
+    this._slider('note-bevel', 'note-bevel-v', v => { const n = v/100; this._setVal('note-bevel-v', n.toFixed(2)); apply({ notes: { ...t().notes, bevel: n } }); });
     this._slider('note-shimmer', 'note-shimmer-v', v => { const n = v/100; this._setVal('note-shimmer-v', n.toFixed(2)); apply({ notes: { ...t().notes, shimmer: n } }); });
     this._slider('note-afterglow', 'note-afterglow-v', v => { const n = v/100; this._setVal('note-afterglow-v', n.toFixed(2)); apply({ notes: { ...t().notes, afterglow: n } }); });
 
@@ -376,14 +371,16 @@ export class SettingsPanel {
       const style = (e.target as HTMLSelectElement).value as 'realistic' | 'neon';
       // Auto-swap key colours so the toggle is visibly distinct
       const colors = style === 'realistic'
-        ? { whiteKeyColor: '#f0ede0', blackKeyColor: '#1a1a18' }
-        : { whiteKeyColor: '#1a1a2e', blackKeyColor: '#0a0a14' };
+        ? { whiteKeyColor: '#f3efe4', blackKeyColor: '#16120f' }
+        : { whiteKeyColor: '#1a1b26', blackKeyColor: '#0b0b12' };
       (el('piano-white') as HTMLInputElement).value = colors.whiteKeyColor;
       (el('piano-black') as HTMLInputElement).value = colors.blackKeyColor;
       apply({ piano: { ...t().piano, style, ...colors } });
     });
     el('piano-white').addEventListener('input', e => apply({ piano: { ...t().piano, whiteKeyColor: (e.target as HTMLInputElement).value } }));
     el('piano-black').addEventListener('input', e => apply({ piano: { ...t().piano, blackKeyColor: (e.target as HTMLInputElement).value } }));
+    el('piano-felt').addEventListener('input', e => apply({ piano: { ...t().piano, feltColor: (e.target as HTMLInputElement).value } }));
+    el('piano-range').addEventListener('change', e => apply({ piano: { ...t().piano, range: (e.target as HTMLSelectElement).value as 'fit' | 'full' } }));
     el('piano-glow').addEventListener('change', e => apply({ piano: { ...t().piano, pressedGlow: (e.target as HTMLInputElement).checked } }));
     el('piano-press-source').addEventListener('change', e => apply({ piano: { ...t().piano, pressColorSource: (e.target as HTMLSelectElement).value as 'track'|'custom' } }));
     el('piano-press-color').addEventListener('input', e => apply({ piano: { ...t().piano, pressCustomColor: (e.target as HTMLInputElement).value } }));
@@ -444,6 +441,7 @@ export class SettingsPanel {
     el('fx-layer-sparks').addEventListener('change', e => apply({ effects: { ...t().effects, particleLayers: { ...t().effects.particleLayers, sparks: (e.target as HTMLInputElement).checked } } }));
     el('fx-layer-embers').addEventListener('change', e => apply({ effects: { ...t().effects, particleLayers: { ...t().effects.particleLayers, embers: (e.target as HTMLInputElement).checked } } }));
     el('fx-layer-ambient').addEventListener('change', e => apply({ effects: { ...t().effects, particleLayers: { ...t().effects.particleLayers, ambient: (e.target as HTMLInputElement).checked } } }));
+    el('fx-layer-impact').addEventListener('change', e => apply({ effects: { ...t().effects, particleLayers: { ...t().effects.particleLayers, impact: (e.target as HTMLInputElement).checked } } }));
     el('fx-grain').addEventListener('change', e => apply({ effects: { ...t().effects, filmGrain: (e.target as HTMLInputElement).checked } }));
     this._slider('grain-intensity', 'grain-int-v', v => { const n = v/100; this._setVal('grain-int-v', n.toFixed(2)); apply({ effects: { ...t().effects, filmGrainIntensity: n } }); });
     el('fx-vignette').addEventListener('change', e => apply({ effects: { ...t().effects, vignette: (e.target as HTMLInputElement).checked } }));
@@ -528,6 +526,7 @@ export class SettingsPanel {
     set('vel-min', Math.round(t.notes.velocityModulation.minBrightness * 100));
     set('vel-max', Math.round(t.notes.velocityModulation.maxBrightness * 100));
     set('note-shimmer', Math.round(t.notes.shimmer * 100));
+    set('note-bevel', Math.round(t.notes.bevel * 100));
     set('note-afterglow', Math.round(t.notes.afterglow * 100));
     set('marker-beats-enabled', t.markers.beats.enabled);
     set('marker-beats-color', t.markers.beats.color);
@@ -541,6 +540,8 @@ export class SettingsPanel {
     set('piano-style', t.piano.style);
     set('piano-white', t.piano.whiteKeyColor);
     set('piano-black', t.piano.blackKeyColor);
+    set('piano-felt', t.piano.feltColor);
+    set('piano-range', t.piano.range);
     set('piano-glow', t.piano.pressedGlow);
     set('piano-press-source', t.piano.pressColorSource);
     set('piano-press-color', t.piano.pressCustomColor);
@@ -559,6 +560,7 @@ export class SettingsPanel {
     set('fx-layer-sparks', t.effects.particleLayers.sparks);
     set('fx-layer-embers', t.effects.particleLayers.embers);
     set('fx-layer-ambient', t.effects.particleLayers.ambient);
+    set('fx-layer-impact', t.effects.particleLayers.impact);
     set('fx-grain', t.effects.filmGrain);
     set('grain-intensity', Math.round(t.effects.filmGrainIntensity * 100));
     set('fx-vignette', t.effects.vignette);
@@ -593,6 +595,7 @@ export class SettingsPanel {
       ['vel-min-v', t.notes.velocityModulation.minBrightness.toFixed(2)],
       ['vel-max-v', t.notes.velocityModulation.maxBrightness.toFixed(2)],
       ['note-shimmer-v', t.notes.shimmer.toFixed(2)],
+      ['note-bevel-v', t.notes.bevel.toFixed(2)],
       ['note-afterglow-v', t.notes.afterglow.toFixed(2)],
       ['marker-beats-op-v', t.markers.beats.opacity.toFixed(2)],
       ['marker-bars-op-v', t.markers.bars.opacity.toFixed(2)],

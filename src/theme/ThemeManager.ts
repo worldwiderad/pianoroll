@@ -8,10 +8,15 @@ export class ThemeManager {
   private listeners: Array<(t: Theme) => void> = [];
 
   constructor() {
-    const saved = localStorage.getItem(LS_KEY);
+    let saved: Partial<Theme> | null = null;
+    try { saved = JSON.parse(localStorage.getItem(LS_KEY) ?? 'null'); } catch { saved = null; }
+    // Themes saved before the keyboard redesign (no felt colour) were tuned
+    // for the old renderer, whose low bloom threshold washed the keys out.
+    // Start those visitors on the current default instead.
+    if (saved && !(saved.piano && 'feltColor' in saved.piano)) saved = null;
     // Deep-merge so newly-added Theme fields are filled from defaults
     this.current = saved
-      ? deepMerge(DEFAULT_THEME, JSON.parse(saved)) as Theme
+      ? deepMerge(DEFAULT_THEME, saved) as Theme
       : { ...DEFAULT_THEME };
   }
 

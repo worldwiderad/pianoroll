@@ -41,6 +41,7 @@ uniform float useInstanceColor;
 uniform float bloomMul;
 uniform float shimmer;
 uniform float time;
+uniform float bevel;
 varying vec2 vUv;
 varying vec2 vSize;
 varying float vBrightness;
@@ -66,9 +67,17 @@ void main() {
   alpha *= fadeAlpha;
   if (alpha < 0.01) discard;
   vec3 baseColor = mix(color, vInstanceColor, useInstanceColor);
+  // Bevel: a lit leading edge (the end that meets the keys) and a thin bright
+  // rim, over a body a shade darker, measured in pixels so long and short
+  // notes look alike.
+  float rim = 1.0 - smoothstep(0.0, 2.2, -d);
+  float lead = 1.0 - smoothstep(0.0, 9.0, vUv.y * vSize.y);
+  vec3 lit = baseColor * (1.0 - 0.16 * bevel);
+  lit = mix(lit, min(baseColor * 1.35 + 0.12, vec3(1.6)), rim * 0.55 * bevel);
+  lit += baseColor * lead * 0.3 * bevel;
   // Subtle sine shimmer along vertical UV — at shimmer=0 this is a no-op.
   float shim = 1.0 + shimmer * sin(time * 3.0 + vUv.y * 6.0);
-  vec3 c = baseColor * max(1.0, vBrightness) * bloomMul * shim;
+  vec3 c = lit * max(1.0, vBrightness) * bloomMul * shim;
   gl_FragColor = vec4(c, opacity * alpha);
 }
 `;
@@ -88,6 +97,7 @@ function makeNoteMaterial(color: THREE.Color, opacity: number, theme: Theme, isT
       useInstanceColor: { value: theme.notes.colorMode === 'pitch' ? 1.0 : 0.0 },
       bloomMul: { value: theme.notes.bloomMultiplier },
       shimmer: { value: isTrail ? 0 : theme.notes.shimmer },
+      bevel: { value: isTrail ? 0 : theme.notes.bevel },
       time: { value: 0 },
     },
     vertexShader: NOTE_VERT,
@@ -169,7 +179,7 @@ export class NoteRain {
     for (let midi = FIRST_MIDI; midi < FIRST_MIDI + KEY_COUNT; midi++) {
       const x = keyXFn(midi);
       const black = isBlack(midi);
-      const w = black ? keyW * 0.58 - 1 : keyW - 1.5;
+      const w = black ? keyW * 0.5 : keyW - Math.max(2, keyW * 0.12);
       this.keyXMap.set(midi, x);
       this.keyWidthMap.set(midi, w);
     }
@@ -246,7 +256,7 @@ export class NoteRain {
         if (note.time > currentTime + lookAhead) break;
 
         const x = this.keyXMap.get(note.midi) ?? 0;
-        const w = this.keyWidthMap.get(note.midi) ?? this.whiteKeyW - 1.5;
+        const w = this.keyWidthMap.get(note.midi) ?? this.whiteKeyW * 0.88;
 
         const bottomY = pianoTop + (note.time - currentTime) * speed;
         const topY = pianoTop + (noteEnd - currentTime) * speed;
@@ -300,8 +310,8 @@ export class NoteRain {
 
         // Trail: a narrower, taller streak placed ABOVE the note's top edge
         // (fadeUp uniform fades it from solid near the note to transparent at the far end).
-        if (trailLen > 0 && trailCount < MAX_INSTANCES) {
-          const trailH = Math.max(renderH * trailLen * 2.5, 12);
+        if (trailLen > 0 && renderH > 10 && trailCount < MAX_INSTANCES) {
+          const trailH = renderH * trailLen * 2.5;
           const trailCenterY = topY + trailH / 2;
           d.position.set(x, trailCenterY, 1.5);
           d.scale.set(w * 0.55, trailH, 1);
@@ -375,6 +385,7 @@ export class NoteRain {
       r.mat.uniforms.useInstanceColor.value = usePitch;
       r.mat.uniforms.bloomMul.value = theme.notes.bloomMultiplier;
       r.mat.uniforms.shimmer.value = theme.notes.shimmer;
+      r.mat.uniforms.bevel.value = theme.notes.bevel;
       r.trailMat.uniforms.opacity.value = theme.notes.trailOpacity;
       r.trailMat.uniforms.shape.value = shapeVal;
       r.trailMat.uniforms.cornerRadius.value = theme.notes.cornerRadius;

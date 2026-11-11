@@ -119,7 +119,7 @@ export class SceneManager {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(w, h);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1;
     container.appendChild(this.renderer.domElement);
 

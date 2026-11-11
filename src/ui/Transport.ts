@@ -83,10 +83,17 @@ export class Transport {
     if (!this.dragging && this.clock.duration > 0) {
       this.seekEl.value = String(Math.round((currentTime / this.clock.duration) * 1000));
     }
+    this.seekEl.style.setProperty('--p', `${Number(this.seekEl.value) / 10}%`);
     this.timeEl.textContent = `${fmt(currentTime)} / ${fmt(this.clock.duration)}`;
   }
 
   show() { el('transport').classList.add('visible'); }
+
+  setTitle(name: string) {
+    const t = el('song-title');
+    t.textContent = name;
+    t.title = name;
+  }
 
   private _setIcon(playing: boolean) {
     this.playIcon.innerHTML = playing

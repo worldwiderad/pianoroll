@@ -146,6 +146,12 @@ export class ImpactBurst {
     this.ringMesh.visible = v;
   }
 
+  /** Size the flash and the shockwave ring to the keyboard: a few keys across at most. */
+  setKeyWidth(keyW: number) {
+    this.flashMat.uniforms.baseSize.value = Math.max(50, Math.min(150, keyW * 4));
+    this.ringMat.uniforms.baseRadius.value = Math.max(40, Math.min(140, keyW * 3.5));
+  }
+
   setIntensityMultiplier(m: number) {
     this.flashMat.uniforms.globalScale.value = m;
     this.ringMat.uniforms.globalScale.value = m;
@@ -197,7 +203,7 @@ export class ImpactBurst {
         globalScale: { value: 1 },
         // Peak diameter ~480 px on a loud note; ~2× the typical spark cone.
         // Research recipe: the flash must read as "bigger than the cause."
-        baseSize: { value: 240 },
+        baseSize: { value: 150 },
       },
       vertexShader: /* glsl */ `
         in vec2 corner;
@@ -265,7 +271,9 @@ export class ImpactBurst {
 
           // HDR-white tinted with the press colour. Values >>1 so bloom picks
           // the core up hard — research's "the flash IS the bloom anchor."
-          vec3 hot  = vec3(5.0, 4.4, 3.4);
+          // Tinted by the note so a hit glows in its own colour rather than
+          // bleaching to white.
+          vec3 hot  = vColor * 2.2 + vec3(0.9, 0.85, 0.75);
           vec3 warm = vColor * 2.0 + vec3(0.6, 0.5, 0.3);
           vec3 col = mix(hot, warm, smoothstep(0.0, 0.6, vAge01));
           outColor = vec4(col * a * vIntensity, a);

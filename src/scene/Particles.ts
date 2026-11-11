@@ -30,6 +30,8 @@ export class Particles {
   /** Configured target — actual rate decays inside _seedAmbient based on density. */
   private ambientTargetPerSecond = 600;
   private globalDensity = 1;
+  private impactOn = true;
+  private keyScale = 1;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -113,10 +115,10 @@ export class Particles {
     const v01 = Math.max(0, Math.min(1, velocity));
     // Velocity → magnitude: power curve. Soft notes still pop a little.
     const vMag = 0.3 + 0.85 * Math.pow(v01, 0.7);
-    const density = this.globalDensity * vMag;
+    const density = this.globalDensity * vMag * this.keyScale;
 
     // Flash + ring fire first (instant feedback).
-    this.impact.spawn(x, y, color, velocity);
+    if (this.impactOn) this.impact.spawn(x, y, color, velocity);
 
     // Sparks: tight upward cone, lognormal-ish speed distribution → a few
     // fast lead sparks plus a base of slower ones.
@@ -164,6 +166,13 @@ export class Particles {
   }
 
   /** Define the rectangular region (world space) where ambient drifters respawn. */
+  setKeyWidth(keyW: number) {
+    this.impact.setKeyWidth(keyW);
+    // Narrow keys (a phone, or a wide piece) get proportionally fewer sparks,
+    // so a busy passage doesn't bury the keyboard.
+    this.keyScale = Math.max(0.3, Math.min(1, keyW / 28));
+  }
+
   setAmbientRegion(x: number, y: number, w: number, h: number) {
     this.ambientRegion = { x, y, w, h };
   }
@@ -233,6 +242,7 @@ export class Particles {
     this.sparks.setEnabled(this.enabled && layers.sparks);
     this.embers.setEnabled(this.enabled && layers.embers);
     this.ambient.setEnabled(this.enabled && layers.ambient);
+    this.impactOn = layers.impact !== false;
 
     // Curl + gravity globals — tuned per layer relative to the theme value.
     const curl = fx.particleCurl;
