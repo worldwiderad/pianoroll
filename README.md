@@ -4,6 +4,8 @@ A MIDI visualiser that runs in the browser: notes fall onto an 88-key keyboard i
 
 Built with TypeScript, Three.js and Vite.
 
+**Try it:** [worldwiderad.github.io/pianoroll](https://worldwiderad.github.io/pianoroll/)
+
 ## Running it
 
 ```sh
