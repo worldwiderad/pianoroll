@@ -231,13 +231,22 @@ export class SettingsPanel {
       btn.className = 'preset-btn';
       btn.type = 'button';
       const bg = preset.background;
-      const sky = bg.gradient
+      let sky = bg.gradient
         ? `linear-gradient(0deg, ${bg.gradientStops[0]}, ${bg.gradientStops[1]} 50%, ${bg.gradientStops[2]})`
         : bg.color;
+      if (bg.aurora) {
+        const [a, b, c, d] = bg.auroraColors;
+        sky = `radial-gradient(circle at 18% 30%, ${a}cc, transparent 55%), radial-gradient(circle at 60% 10%, ${b}cc, transparent 55%), `
+          + `radial-gradient(circle at 90% 45%, ${c}aa, transparent 50%), radial-gradient(circle at 40% 70%, ${d}88, transparent 45%), ${sky}`;
+      }
+      const glassy = preset.notes.glass > 0;
       const bars = [0, 1, 2, 3].map(j => {
         const c = preset.trackColors[j % 2 === 0 ? 0 : 1] ?? '#fff';
         const h = [16, 9, 22, 12][j];
         const glow = preset.effects.bloom ? `box-shadow:0 0 8px ${c};` : '';
+        if (glassy) {
+          return `<i style="left:${12 + j * 17}%;height:${h}px;width:9px;background:${c}40;border:1px solid rgba(255,255,255,0.7);border-right-color:rgba(255,255,255,0.2);border-bottom-color:rgba(255,255,255,0.2);backdrop-filter:blur(3px);box-shadow:0 0 6px ${c}66"></i>`;
+        }
         return `<i style="left:${12 + j * 17}%;height:${h}px;background:${c};${glow}"></i>`;
       }).join('');
       btn.innerHTML = `<div class="preset-swatch" style="background:${sky};--wk:${preset.piano.whiteKeyColor};--felt:${preset.piano.feltColor}">${bars}<b></b></div><span>${preset.name}</span>`;
@@ -281,6 +290,23 @@ export class SettingsPanel {
     el('bg-stop1').addEventListener('input', e => { const s = [...t().background.gradientStops] as [string,string,string]; s[1] = (e.target as HTMLInputElement).value; apply({ background: { ...t().background, gradientStops: s } }); });
     el('bg-stop2').addEventListener('input', e => { const s = [...t().background.gradientStops] as [string,string,string]; s[2] = (e.target as HTMLInputElement).value; apply({ background: { ...t().background, gradientStops: s } }); });
     el('bg-stars').addEventListener('change', e => apply({ background: { ...t().background, starfield: (e.target as HTMLInputElement).checked } }));
+    el('bg-aurora').addEventListener('change', e => {
+      const on = (e.target as HTMLInputElement).checked;
+      this._updateAuroraVisibility(on);
+      apply({ background: { ...t().background, aurora: on } });
+    });
+    [0, 1, 2, 3].forEach(i => el(`aurora-c${i}`).addEventListener('input', e => {
+      const c = [...t().background.auroraColors] as [string, string, string, string];
+      c[i] = (e.target as HTMLInputElement).value;
+      apply({ background: { ...t().background, auroraColors: c } });
+    }));
+    el('ui-frosted').addEventListener('change', e => {
+      const on = (e.target as HTMLInputElement).checked;
+      document.body.classList.toggle('ui-frosted', on);
+      apply({ ui: { ...t().ui, frosted: on } });
+    });
+    this._slider('note-glass', 'note-glass-v', v => { const n = v/100; this._setVal('note-glass-v', n.toFixed(2)); apply({ notes: { ...t().notes, glass: n } }); });
+    this._slider('frost', 'frost-v', v => { const n = v/100; this._setVal('frost-v', n.toFixed(2)); apply({ effects: { ...t().effects, frost: n } }); });
     el('bg-scanlines').addEventListener('change', e => apply({ background: { ...t().background, scanlines: (e.target as HTMLInputElement).checked } }));
 
     // Background media — image / video overlay
@@ -368,11 +394,13 @@ export class SettingsPanel {
 
     // Piano
     el('piano-style').addEventListener('change', e => {
-      const style = (e.target as HTMLSelectElement).value as 'realistic' | 'neon';
+      const style = (e.target as HTMLSelectElement).value as 'realistic' | 'neon' | 'glass';
       // Auto-swap key colours so the toggle is visibly distinct
       const colors = style === 'realistic'
         ? { whiteKeyColor: '#f3efe4', blackKeyColor: '#16120f' }
-        : { whiteKeyColor: '#1a1b26', blackKeyColor: '#0b0b12' };
+        : style === 'glass'
+          ? { whiteKeyColor: '#ffffff', blackKeyColor: '#16132a' }
+          : { whiteKeyColor: '#1a1b26', blackKeyColor: '#0b0b12' };
       (el('piano-white') as HTMLInputElement).value = colors.whiteKeyColor;
       (el('piano-black') as HTMLInputElement).value = colors.blackKeyColor;
       apply({ piano: { ...t().piano, style, ...colors } });
@@ -507,6 +535,12 @@ export class SettingsPanel {
     set('bg-stop1', t.background.gradientStops[1]);
     set('bg-stop2', t.background.gradientStops[2]);
     set('bg-stars', t.background.starfield);
+    set('bg-aurora', t.background.aurora);
+    t.background.auroraColors.forEach((c, i) => set(`aurora-c${i}`, c));
+    set('ui-frosted', t.ui.frosted);
+    set('note-glass', Math.round(t.notes.glass * 100));
+    set('frost', Math.round(t.effects.frost * 100));
+    this._updateAuroraVisibility(t.background.aurora);
     set('bg-scanlines', t.background.scanlines);
     const media = t.background.media;
     set('bg-media-fit', media?.fit ?? 'cover');
@@ -596,6 +630,8 @@ export class SettingsPanel {
       ['vel-max-v', t.notes.velocityModulation.maxBrightness.toFixed(2)],
       ['note-shimmer-v', t.notes.shimmer.toFixed(2)],
       ['note-bevel-v', t.notes.bevel.toFixed(2)],
+      ['note-glass-v', t.notes.glass.toFixed(2)],
+      ['frost-v', t.effects.frost.toFixed(2)],
       ['note-afterglow-v', t.notes.afterglow.toFixed(2)],
       ['marker-beats-op-v', t.markers.beats.opacity.toFixed(2)],
       ['marker-bars-op-v', t.markers.bars.opacity.toFixed(2)],
@@ -603,6 +639,7 @@ export class SettingsPanel {
     ];
     dv.forEach(([id, v]) => this._setVal(id, v));
     this._applyAccent(t.ui.accentColor);
+    document.body.classList.toggle('ui-frosted', t.ui.frosted);
     document.documentElement.style.setProperty('--hud-opacity', String(t.ui.hudOpacity));
     this._updateBgVisibility(t.background.gradient);
     this._updateCornerRadiusVisibility(t.notes.shape);
@@ -628,6 +665,11 @@ export class SettingsPanel {
 
   private _applyAccent(color: string) {
     document.documentElement.style.setProperty('--accent', color);
+  }
+
+  private _updateAuroraVisibility(on: boolean) {
+    const row = document.getElementById('aurora-colors-row');
+    if (row) row.style.display = on ? 'flex' : 'none';
   }
 
   private _updateBgVisibility(gradientOn: boolean) {

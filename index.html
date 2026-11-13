@@ -212,7 +212,7 @@
     .btn-row { display: flex; gap: 6px; }
 
     /* Presets as small previews */
-    .preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .preset-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
     .preset-btn {
       display: flex; flex-direction: column; gap: 7px; padding: 6px 6px 8px; text-align: left;
       border-radius: 12px; border: 1px solid var(--line); background: var(--fill);
@@ -300,6 +300,41 @@
     .d-status { display: flex; justify-content: space-between; color: var(--ink-3); font-size: 0.78rem; margin-top: 8px; font-variant-numeric: tabular-nums; }
     .d-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 22px; }
     .d-actions .btn { height: 40px; }
+
+    /* ── Frosted panels (glass looks) ────────────────────────────── */
+    body.ui-frosted {
+      --line: rgba(255, 255, 255, 0.2);
+      --fill: rgba(255, 255, 255, 0.08);
+      --fill-2: rgba(255, 255, 255, 0.15);
+      --ink-2: rgba(255, 255, 255, 0.76);
+      --ink-3: rgba(255, 255, 255, 0.52);
+    }
+    body.ui-frosted .w-card,
+    body.ui-frosted #left-panel,
+    body.ui-frosted #track-panel,
+    body.ui-frosted #transport,
+    body.ui-frosted .dialog {
+      background:
+        linear-gradient(135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.06) 38%, rgba(255,255,255,0.03) 70%, rgba(255,255,255,0.08)),
+        rgba(22, 16, 46, calc(0.32 * var(--hud-opacity)));
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-top-color: rgba(255, 255, 255, 0.42);
+      border-left-color: rgba(255, 255, 255, 0.34);
+      backdrop-filter: blur(34px) saturate(1.8);
+      -webkit-backdrop-filter: blur(34px) saturate(1.8);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), 0 24px 70px rgba(8, 4, 30, 0.45);
+    }
+    body.ui-frosted .drop-zone, body.ui-frosted .preset-btn, body.ui-frosted .lib-row, body.ui-frosted .w-file { background: rgba(255,255,255,0.07); }
+    body.ui-frosted .btn-ghost, body.ui-frosted .t-icon, body.ui-frosted .t-btn, body.ui-frosted .s-select, body.ui-frosted #speed-select {
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+    }
+    body.ui-frosted .btn-primary, body.ui-frosted #play-btn {
+      background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 85%, white), var(--accent));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 8px 30px color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+    body.ui-frosted .s-toggle-track { background: rgba(255,255,255,0.2); }
+    body.ui-frosted .dialog-overlay { background: rgba(10, 6, 30, 0.35); }
+    body.ui-frosted .w-eyebrow { color: color-mix(in srgb, var(--accent) 70%, white); }
 
     /* ── Phones ──────────────────────────────────────────────────── */
     @media (max-width: 640px) {
@@ -460,6 +495,8 @@
         <div class="s-row"><span class="s-label">Stops</span><div class="gradient-stops"><input type="color" class="stop-color" id="bg-stop0" /><input type="color" class="stop-color" id="bg-stop1" /><input type="color" class="stop-color" id="bg-stop2" /></div></div>
         <div class="s-row"><span class="s-label">Starfield</span><label class="s-toggle"><input type="checkbox" id="bg-stars" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
         <div class="s-row"><span class="s-label">Scanlines</span><label class="s-toggle"><input type="checkbox" id="bg-scanlines" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row"><span class="s-label">Aurora</span><label class="s-toggle"><input type="checkbox" id="bg-aurora" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
+        <div class="s-row" id="aurora-colors-row"><span class="s-label">Aurora colours</span><div class="gradient-stops"><input type="color" class="stop-color" id="aurora-c0" /><input type="color" class="stop-color" id="aurora-c1" /><input type="color" class="stop-color" id="aurora-c2" /><input type="color" class="stop-color" id="aurora-c3" /></div></div>
       </div>
       <div class="s-divider" data-view="performance"></div>
       <div class="s-section" data-view="performance">
@@ -491,6 +528,7 @@
         <div class="s-section-title">UI</div>
         <div class="s-row"><span class="s-label">HUD opacity <span class="s-value" id="hud-op-v">0.8</span></span><input type="range" class="s-slider" id="hud-opacity" min="0" max="100" /></div>
         <div class="s-row"><span class="s-label">Accent colour</span><input type="color" class="s-color" id="ui-accent" /></div>
+        <div class="s-row"><span class="s-label">Frosted panels</span><label class="s-toggle"><input type="checkbox" id="ui-frosted" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
       </div>
     </div>
 
@@ -506,6 +544,7 @@
         <div class="s-row"><span class="s-label">Trail opacity <span class="s-value" id="trail-op-v">0.3</span></span><input type="range" class="s-slider" id="trail-opacity" min="0" max="100" /></div>
         <div class="s-row"><span class="s-label">Corner radius <span class="s-value" id="corner-r-v">6</span></span><input type="range" class="s-slider" id="corner-radius" min="0" max="20" /></div>
         <div class="s-row"><span class="s-label">Edge highlight <span class="s-value" id="note-bevel-v">0.6</span></span><input type="range" class="s-slider" id="note-bevel" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Glass <span class="s-value" id="note-glass-v">0</span></span><input type="range" class="s-slider" id="note-glass" min="0" max="100" /></div>
       </div>
       <div class="s-divider"></div>
       <div class="s-section">
@@ -597,7 +636,8 @@
           <span class="s-label">Finish</span>
           <select class="s-select" id="piano-style">
             <option value="realistic">Ivory and ebony</option>
-            <option value="neon">Dark glass</option>
+            <option value="neon">Dark, lit by notes</option>
+            <option value="glass">Frosted glass</option>
           </select>
         </div>
         <div class="s-row"><span class="s-label">White keys</span><input type="color" class="s-color" id="piano-white" /></div>
@@ -684,6 +724,7 @@
         <div class="s-row"><span class="s-label">Vignette <span class="s-value" id="vignette-int-v">0.4</span></span><input type="range" class="s-slider" id="vignette-intensity" min="0" max="100" /></div>
         <div class="s-row"><span class="s-label">Chromatic aberration</span><label class="s-toggle"><input type="checkbox" id="fx-chroma" /><span class="s-toggle-track"></span><span class="s-toggle-thumb"></span></label></div>
         <div class="s-row"><span class="s-label">Chroma intensity <span class="s-value" id="chroma-int-v">0.3</span></span><input type="range" class="s-slider" id="chroma-intensity" min="0" max="100" /></div>
+        <div class="s-row"><span class="s-label">Frost <span class="s-value" id="frost-v">0.6</span></span><input type="range" class="s-slider" id="frost" min="0" max="100" /></div>
       </div>
     </div>
   </div>

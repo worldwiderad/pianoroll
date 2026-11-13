@@ -39,6 +39,9 @@ export interface Theme {
     gradientStops: [string, string, string];
     starfield: boolean;
     scanlines: boolean;
+    /** Slow-moving glows of colour behind everything. */
+    aurora: boolean;
+    auroraColors: [string, string, string, string];
     /**
      * Optional image/video overlay behind the scene. `src` is a temporary
      * object URL — NOT persisted in localStorage (would bust quota and the
@@ -77,10 +80,12 @@ export interface Theme {
     afterglow: number;
     /** Lit leading edge and inner rim on each note (0 = flat, 1 = full). */
     bevel: number;
+    /** Frosted glass notes that show a blurred background through them (0 = solid, 1 = glass). */
+    glass: number;
   };
   trackColors: string[];
   piano: {
-    style: 'realistic' | 'neon';
+    style: 'realistic' | 'neon' | 'glass';
     whiteKeyColor: string;
     blackKeyColor: string;
     pressedGlow: boolean;
@@ -130,10 +135,14 @@ export interface Theme {
     /** Chromatic aberration intensity (0..1). */
     chromaticAberration: boolean;
     chromaticAberrationIntensity: number;
+    /** How strongly glass blurs what is behind it (0..1). */
+    frost: number;
   };
   ui: {
     hudOpacity: number;
     accentColor: string;
+    /** Light, frosted panels instead of dark ones. */
+    frosted: boolean;
   };
   timeline: {
     trackOpacityKeyframes: TrackOpacityKeyframe[];

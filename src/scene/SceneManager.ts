@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { Backdrop, BACKDROP_LAYER } from './Backdrop';
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import type { Theme, CameraAngle, CameraMode } from '../theme/types';
 import { MediaBackground } from './MediaBackground';
@@ -106,6 +107,8 @@ export class SceneManager {
   private outputPass: OutputPass;
   private bgMesh: THREE.Mesh;
   private bgMat: THREE.ShaderMaterial;
+  private backdrop = new Backdrop();
+  private glassActive = false;
   media: MediaBackground;
   private reflector: Reflector | null = null;
   private stars: THREE.Points | null = null;
@@ -146,25 +149,64 @@ export class SceneManager {
         colorB: { value: new THREE.Color('#0d0820') },
         colorC: { value: new THREE.Color('#080810') },
         useGradient: { value: 1.0 },
+        aurora: { value: 0 },
+        auroraA: { value: new THREE.Color('#ff4fd8') },
+        auroraB: { value: new THREE.Color('#6a5cff') },
+        auroraC: { value: new THREE.Color('#22d3ee') },
+        auroraD: { value: new THREE.Color('#ff9a3c') },
+        uTime: { value: 0 },
+        uSize: { value: new THREE.Vector2(w, h) },
       },
-      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      vertexShader: `
+        varying vec2 vUv; varying vec2 vWorld;
+        void main() {
+          vUv = uv;
+          vWorld = (modelMatrix * vec4(position, 1.0)).xy;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
       fragmentShader: `
         uniform vec3 colorA; uniform vec3 colorB; uniform vec3 colorC;
         uniform float useGradient;
-        varying vec2 vUv;
+        uniform float aurora;
+        uniform vec3 auroraA; uniform vec3 auroraB; uniform vec3 auroraC; uniform vec3 auroraD;
+        uniform float uTime;
+        uniform vec2 uSize;
+        varying vec2 vUv; varying vec2 vWorld;
+        // One soft glow drifting on its own slow loop.
+        float blob(vec2 s, vec2 home, vec2 swing, float speed, float phase, float r) {
+          vec2 c = home + swing * vec2(sin(uTime * speed + phase), cos(uTime * speed * 0.73 + phase * 1.7));
+          // Measure against the shorter side, so glows keep their size in portrait.
+          vec2 d = (s - c) * uSize / min(uSize.x, uSize.y);
+          return exp(-dot(d, d) / (r * r));
+        }
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
         void main() {
           vec3 col = mix(colorA, colorB, smoothstep(0.0, 0.5, vUv.y));
           col = mix(col, colorC, smoothstep(0.5, 1.0, vUv.y));
-          gl_FragColor = vec4(mix(colorA, col, useGradient), 1.0);
+          col = mix(colorA, col, useGradient);
+          if (aurora > 0.5) {
+            vec2 s = vWorld / uSize;
+            col += auroraA * blob(s, vec2(0.16, 0.74), vec2(0.12, 0.10), 0.11, 0.0, 0.30) * 0.62;
+            col += auroraB * blob(s, vec2(0.56, 0.92), vec2(0.18, 0.06), 0.08, 2.1, 0.34) * 0.55;
+            col += auroraC * blob(s, vec2(0.88, 0.52), vec2(0.08, 0.16), 0.10, 4.2, 0.28) * 0.5;
+            // The fourth glow lives low, behind the keyboard, so glass keys
+            // have colour to show.
+            col += auroraD * blob(s, vec2(0.42, 0.10), vec2(0.24, 0.05), 0.07, 1.3, 0.30) * 0.5;
+            // Dither so the long soft gradients do not band.
+            col += (hash(gl_FragCoord.xy + fract(uTime)) - 0.5) / 255.0;
+          }
+          gl_FragColor = vec4(col, 1.0);
         }
       `,
       depthWrite: false,
     });
     this.bgMesh = new THREE.Mesh(new THREE.PlaneGeometry(w * 2.5, h * 2.5), this.bgMat);
     this.bgMesh.position.set(w / 2, h / 2, -50);
+    this.bgMesh.layers.enable(BACKDROP_LAYER);
     this.scene.add(this.bgMesh);
 
     this.media = new MediaBackground(this.scene, w, h);
+    this.media.enableLayer(BACKDROP_LAYER);
 
     // Post-processing
     this.composer = new EffectComposer(this.renderer);
@@ -242,6 +284,7 @@ export class SceneManager {
     this.bgMesh.geometry.dispose();
     this.bgMesh.geometry = new THREE.PlaneGeometry(w * 2.5, h * 2.5);
     this.bgMesh.position.set(w / 2, h / 2, -50);
+    this.bgMat.uniforms.uSize.value.set(w, h);
     this.media.setSize(w, h);
     if (this.reflector) {
       this.reflector.geometry.dispose();
@@ -258,6 +301,15 @@ export class SceneManager {
     this.bgMat.uniforms.colorC.value.set(bg.gradientStops[2]);
     this.bgMat.uniforms.useGradient.value = bg.gradient ? 1 : 0;
     if (!bg.gradient) this.bgMat.uniforms.colorA.value.set(bg.color);
+    this.bgMat.uniforms.aurora.value = bg.aurora ? 1 : 0;
+    const ac = bg.auroraColors;
+    this.bgMat.uniforms.auroraA.value.set(ac[0]);
+    this.bgMat.uniforms.auroraB.value.set(ac[1]);
+    this.bgMat.uniforms.auroraC.value.set(ac[2]);
+    this.bgMat.uniforms.auroraD.value.set(ac[3]);
+    // Run the backdrop pass only while something made of glass is on screen.
+    this.glassActive = t.notes.glass > 0.001 || t.piano.style === 'glass';
+    this.backdrop.frost = t.effects.frost;
 
     this.bloomPass.enabled = t.effects.bloom;
     this.bloomPass.strength = t.effects.bloomStrength;
@@ -329,6 +381,7 @@ export class SceneManager {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, sizeAttenuation: false, transparent: true, opacity: 0.4 });
     this.stars = new THREE.Points(geo, mat);
+    this.stars.layers.enable(BACKDROP_LAYER);
     this.scene.add(this.stars);
   }
 
@@ -378,6 +431,8 @@ export class SceneManager {
 
   render(time: number) {
     this.filmPass.uniforms.time.value = time;
+    this.bgMat.uniforms.uTime.value = time;
+    if (this.glassActive && this.bgMesh.visible) this.backdrop.render(this.renderer, this.scene, this.currentCam);
     this.composer.render();
   }
 
@@ -395,6 +450,7 @@ export class SceneManager {
     this.perspCam.aspect = w / h;
     this.perspCam.updateProjectionMatrix();
     this.bloomPass.resolution.set(w, h);
+    this.bgMat.uniforms.uSize.value.set(w, h);
   }
 
   /** Restore to the viewport size after export. */
@@ -404,6 +460,7 @@ export class SceneManager {
 
   dispose() {
     window.removeEventListener('resize', this._onResize);
+    this.backdrop.dispose();
     this.renderer.dispose();
   }
 }

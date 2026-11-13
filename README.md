@@ -8,7 +8,11 @@ A MIDI visualiser that runs in the browser. Notes fall onto a keyboard drawn lik
 
 ## Looks
 
-Six presets, and nearly everything in them can be changed live. Every preset uses the same realistic keyboard. The bloom is tuned to catch only the notes, beams and particles, so the keys never wash out.
+Seven presets, and nearly everything in them can be changed live. Every preset uses the same realistic keyboard shape. The bloom is tuned to catch only the notes, beams and particles, so the keys never wash out.
+
+![Glass preset: frosted notes and keys over a moving aurora, with frosted panels](docs/glass.jpg)
+
+**Glass** is real frosted glass, not just transparency: each frame the background is drawn on its own and blurred, and the notes and keys show that blur through them, bent slightly at the edges like a lens, with a lit rim along the top and left. White keys are milky glass, black keys smoked glass, and the panels frost over the same moving aurora.
 
 | Neon | Paper |
 |---|---|
@@ -16,6 +20,7 @@ Six presets, and nearly everything in them can be changed live. Every preset use
 
 - **Concert** (the default): a warm dark stage, red felt, amber and blue for the two hands
 - **Neon**: saturated light, trails and sparks over near-black
+- **Glass**: frosted glass notes, keys and panels over slow-moving colour
 - **Studio**: flat and exact, with distinct track colours and a beat grid
 - **Paper**: ink on paper
 - **Midnight** and **Sunset**
@@ -37,8 +42,9 @@ It works on a phone too: the panels become bottom sheets and the transport shrin
 ## What else it does
 
 - **Keyboard**: shaded ivory and ebony keys, off-centre black keys as on a real piano, black-key shadows, a felt strip, and keys that dip and take the note's colour when played
-- **Notes**: per-track or per-pitch colours, rounded or capsule shapes, an edge highlight, trails, velocity-driven brightness and afterglow
-- **Effects**: bloom, sparks and embers, a drifting dust layer, an optional hit flash, vignette, film grain and chromatic aberration
+- **Notes**: per-track or per-pitch colours, rounded or capsule shapes, an edge highlight, frosted glass, trails, velocity-driven brightness and afterglow
+- **Background**: a gradient, a moving aurora in four colours of your choice, stars, or your own image or video
+- **Effects**: bloom, sparks and embers, a drifting dust layer, an optional hit flash, frost, vignette, film grain and chromatic aberration
 - **Sound**: your recording, or a SoundFont sampler with piano, strings, brass, woodwinds, synth pad, synth lead and drums per track
 - **Timeline**: keyframe track opacity and the 3D camera over the course of a piece
 - **Export**: MP4 through WebCodecs, rendered frame by frame at up to 4K and 60 fps (needs a browser with `VideoEncoder`, such as Chrome or Edge)

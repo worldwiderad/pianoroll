@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Theme } from '../theme/types';
 import type { MidiTrack } from '../midi/MidiLoader';
+import { backdropUniforms } from './Backdrop';
 
 export const FULL_RANGE = { lo: 21, hi: 108 } as const;
 export interface KeyRange { lo: number; hi: number }
@@ -181,6 +182,17 @@ function fadeTexture(): THREE.Texture {
   return _fadeTex;
 }
 
+/** A flat pane of darkened frosted glass (the key bed under a glass keyboard). */
+function glassPlane(mul: number, add: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { tBackdrop: backdropUniforms.tBackdrop, uScreen: backdropUniforms.uScreen },
+    vertexShader: `void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform sampler2D tBackdrop; uniform vec2 uScreen;
+      void main() { gl_FragColor = vec4(texture2D(tBackdrop, gl_FragCoord.xy / uScreen).rgb * ${mul.toFixed(3)} + ${add.toFixed(3)}, 1.0); }`,
+  });
+}
+
 const KEY_VERT = /* glsl */ `
 varying vec2 vUv;
 void main() {
@@ -196,10 +208,25 @@ uniform vec3 tint;
 uniform float press;
 uniform float tintAmt;
 uniform float glowAmt;
+uniform float glass;
+uniform float smoked;
+uniform sampler2D tBackdrop;
+uniform vec2 uScreen;
 varying vec2 vUv;
 void main() {
   vec3 base = texture2D(map, vUv).rgb;
   float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+  if (glass > 0.5) {
+    // The surface texture becomes shading only (lip, rounded edges, bevels)
+    // over frosted glass: milky for white keys, smoked for black ones.
+    vec3 behind = texture2D(tBackdrop, gl_FragCoord.xy / uScreen).rgb;
+    // Milky toward the front of the key, clearer toward the back.
+    float milk = mix(0.28, 0.55, 1.0 - vUv.y);
+    vec3 white = mix(behind * 1.15 + vec3(0.05), behind * 0.6 + vec3(0.42), milk) * (0.42 + 0.68 * lum);
+    vec3 black = (behind * 0.24 + vec3(0.012)) * (0.7 + 3.5 * lum);
+    base = mix(white, black, smoked);
+    lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+  }
   vec3 tinted = tint * (0.22 + 0.95 * lum) + base * 0.12;
   vec3 col = mix(base, tinted, press * tintAmt);
   col *= 1.0 - press * 0.12 * (1.0 - vUv.y);
@@ -284,13 +311,14 @@ export class Piano {
     this.pressDepth = Math.max(1.5, pianoH * 0.012);
 
     const neon = theme.piano.style === 'neon';
-    this.tintAmt = theme.piano.pressedGlow ? (neon ? 0.85 : 0.55) : 0;
-    this.glowAmt = theme.piano.pressedGlow && neon ? 0.35 : 0;
+    const glass = theme.piano.style === 'glass';
+    this.tintAmt = theme.piano.pressedGlow ? (neon ? 0.85 : glass ? 0.7 : 0.55) : 0;
+    this.glowAmt = theme.piano.pressedGlow ? (neon ? 0.35 : glass ? 0.3 : 0) : 0;
 
     // Key bed: shows through the gaps between white keys.
     const bed = new THREE.Mesh(
       new THREE.PlaneGeometry(sceneW, pianoH),
-      new THREE.MeshBasicMaterial({ color: neon ? 0x030308 : 0x0a0705 }),
+      glass ? glassPlane(0.3, 0.008) : new THREE.MeshBasicMaterial({ color: neon ? 0x030308 : 0x0a0705 }),
     );
     bed.position.set(sceneW / 2, pianoH / 2, -0.5);
     this.group.add(bed);
@@ -299,13 +327,17 @@ export class Piano {
     const blackTex = blackKeyTexture(theme.piano.blackKeyColor, neon);
     this.textures.push(whiteTex, blackTex);
 
-    const makeKeyMat = (map: THREE.Texture) => new THREE.ShaderMaterial({
+    const makeKeyMat = (map: THREE.Texture, isBlackKey: boolean) => new THREE.ShaderMaterial({
       uniforms: {
         map: { value: map },
         tint: { value: new THREE.Color(1, 1, 1) },
         press: { value: 0 },
         tintAmt: { value: this.tintAmt },
         glowAmt: { value: this.glowAmt },
+        glass: { value: glass ? 1 : 0 },
+        smoked: { value: isBlackKey ? 1 : 0 },
+        tBackdrop: backdropUniforms.tBackdrop,
+        uScreen: backdropUniforms.uScreen,
       },
       vertexShader: KEY_VERT,
       fragmentShader: KEY_FRAG,
@@ -320,7 +352,7 @@ export class Piano {
       const y = black ? pianoH - h / 2 : h / 2;
       const z = black ? 2.5 : 1.0;
 
-      const mat = makeKeyMat(black ? blackTex : whiteTex);
+      const mat = makeKeyMat(black ? blackTex : whiteTex, black);
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, 1), mat);
       mesh.position.set(x, y, z);
       this.group.add(mesh);

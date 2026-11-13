@@ -26,12 +26,15 @@ function base(): Theme {
       reflectiveFloor: false,
       composition: { cursorOpacity: 1, glowRadius: 0.3, glowIntensity: 1, cameraPreset: 'tilt' },
     },
-    background: { color: '#0b0908', gradient: true, gradientStops: ['#0b0908', '#0b0908', '#0b0908'], starfield: false, scanlines: false, media: null },
+    background: {
+      color: '#0b0908', gradient: true, gradientStops: ['#0b0908', '#0b0908', '#0b0908'], starfield: false, scanlines: false, media: null,
+      aurora: false, auroraColors: ['#ff4fd8', '#6a5cff', '#22d3ee', '#ff9a3c'],
+    },
     notes: {
       shape: 'rounded', cornerRadius: 4, opacity: 0.95, glowIntensity: 0.45,
       trailLength: 0, trailOpacity: 0, colorMode: 'track', pitchColors: [...DEFAULT_PITCH_COLORS],
       bloomMultiplier: 1.4, velocityModulation: { enabled: true, minBrightness: 0.6, maxBrightness: 1.35 },
-      shimmer: 0, afterglow: 0.2, bevel: 0.6,
+      shimmer: 0, afterglow: 0.2, bevel: 0.6, glass: 0,
     },
     trackColors: [],
     piano: {
@@ -46,9 +49,9 @@ function base(): Theme {
       particles: true, particleDensity: 0.3, particleLifetime: 1.0, particleGlow: 0.8,
       particleShape: 'circle', particleCurl: 0.7, particleLayers: { sparks: true, embers: true, ambient: false, impact: false },
       filmGrain: true, filmGrainIntensity: 0.05, vignette: true, vignetteIntensity: 0.35,
-      chromaticAberration: false, chromaticAberrationIntensity: 0.2,
+      chromaticAberration: false, chromaticAberrationIntensity: 0.2, frost: 0.6,
     },
-    ui: { hudOpacity: 0.9, accentColor: '#d9b26f' },
+    ui: { hudOpacity: 0.9, accentColor: '#d9b26f', frosted: false },
     timeline: { trackOpacityKeyframes: [], cameraKeyframes: [], autoCamera: true },
     markers: {
       beats: { enabled: false, color: '#ffffff', opacity: 0.06 },
@@ -88,7 +91,18 @@ export const PRESETS: Theme[] = [
     trackColors: ['#22d3ee', '#f472d0', '#a3e635', '#fbbf24', '#818cf8', '#fb7185', '#2dd4bf', '#c084fc'],
     piano: { whiteKeyColor: '#e9ecf2', blackKeyColor: '#0d0e14', feltColor: '#1a1d40', hitLineGlow: 1.4, beamGlow: 1.3, hitRipple: true, pressCustomColor: '#22d3ee' },
     effects: { bloomStrength: 0.8, bloomRadius: 0.5, particleDensity: 0.55, particleGlow: 1.1, particleCurl: 1, particleLayers: { sparks: true, embers: true, ambient: true, impact: false }, filmGrain: false, vignetteIntensity: 0.4, chromaticAberration: true, chromaticAberrationIntensity: 0.12 },
-    ui: { hudOpacity: 0.9, accentColor: '#22d3ee' },
+    ui: { hudOpacity: 0.9, accentColor: '#22d3ee', frosted: false },
+  }),
+
+  // Frosted glass over moving colour: the notes and keys blur and tint what
+  // is behind them, with a lit rim along the top and left of each.
+  preset('Glass', {
+    background: { gradientStops: ['#1a1036', '#0d0b24', '#07061a'], aurora: true, auroraColors: ['#ff4fd8', '#6a5cff', '#22d3ee', '#ff9a3c'] },
+    notes: { cornerRadius: 9, opacity: 1, glass: 1, glowIntensity: 0.5, bevel: 0, bloomMultiplier: 1.3, velocityModulation: { enabled: true, minBrightness: 0.7, maxBrightness: 1.3 }, afterglow: 0.3 },
+    trackColors: ['#ff8ad8', '#8fd3ff', '#b69cff', '#7dffcf', '#ffd27a', '#ff9f8a', '#9cf0ff', '#e3a6ff'],
+    piano: { style: 'glass', whiteKeyColor: '#ffffff', blackKeyColor: '#16132a', feltColor: '#c8b6ff', hitLineGlow: 1.2, beamGlow: 1.1, hitRipple: true, pressCustomColor: '#b69cff' },
+    effects: { bloomStrength: 0.6, bloomRadius: 0.6, particleDensity: 0.35, particleGlow: 0.9, particleLayers: { sparks: true, embers: false, ambient: true, impact: false }, filmGrainIntensity: 0.035, vignetteIntensity: 0.25, frost: 0.7 },
+    ui: { hudOpacity: 0.9, accentColor: '#c4b0ff', frosted: true },
   }),
 
   // Flat and exact, like a DAW: no glow, no particles, bright distinct track

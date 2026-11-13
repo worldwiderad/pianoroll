@@ -92,7 +92,7 @@ Everything visible is rendered through a single Three.js `WebGLRenderer` driving
 - Keys are drawn like a real piano rather than as flat blocks: ivory keys with rounded edges, a lit front lip and a shadow where they run under the fallboard; black keys with bevelled sides, a glossy top and a sloped front; soft shadows from the black keys onto the white ones; gaps between keys; and a felt strip along the back in a colour you choose
 - Black keys sit off-centre the way they do on a real keyboard (C♯ and F♯ to the left of the gap, D♯ and A♯ to the right)
 - The keyboard's height follows the key width, about six and a half widths per key, within limits of the screen height
-- Two **finishes**, switched live: *Ivory and ebony*, and *Dark glass* (dark keys that light up in the note's colour)
+- Three **finishes**, switched live: *Ivory and ebony*; *Dark, lit by notes* (dark keys that light up in the note's colour); and *Frosted glass* (milky white keys and smoked black keys that show the blurred background through them, keeping the same lip, bevels and shadows)
 - **Depth press**: pressed keys go down quickly and come back a little slower, like a real action
 - **Press glow** (toggleable): tints the pressed key with the source colour and fires a press beam
 - **Press colour source**: either pulled from the note's track colour, or a fixed custom colour
@@ -175,6 +175,7 @@ Every visual property of the visualiser is part of a single `Theme` object. Chan
 |---|---|---|
 | **Concert** *(default)* | Ivory and ebony | Warm dark stage, red felt, amber and blue notes, a light bloom and a few sparks |
 | **Neon** | Ivory and ebony | Saturated notes with trails over near-black with stars, strong bloom on the notes only |
+| **Glass** | Frosted glass | Frosted glass notes and keys over a moving aurora, frosted panels |
 | **Studio** | Ivory and ebony | Flat graphite, bright distinct track colours, a beat and bar grid, no glow or particles |
 | **Paper** | Ivory and ebony | Ink on paper: a light background, ink-blue and black notes, no effects |
 | **Midnight** | Ivory and ebony | Deep blue gradient, cool pastel notes, soft bloom, drifting dust |
@@ -191,11 +192,17 @@ Every preset value is also exposed as a live setting:
 - Gradient toggle + 3 stop colours
 - Starfield toggle
 - Scanlines toggle
+- Aurora toggle + 4 colours: soft glows that drift slowly behind everything
+
+**Glass**
+- Frost: how strongly glass notes and keys blur what is behind them. Glass works by drawing the background (gradient, aurora, stars, media) on its own at a quarter of the resolution each frame, blurring it, and letting glass materials sample it at their own screen position. The pass only runs while something made of glass is on screen.
+- Frosted panels: light, frosted interface panels instead of dark ones
 
 **Notes**
 - Shape: rectangle / rounded / capsule
 - Corner radius (only meaningful for rounded)
 - Edge highlight: a lit leading edge and a thin bright rim on each note
+- Glass (0 to 1): frosted glass notes that show the blurred background through them, bend it slightly at the rim, catch light along the top and left edges, and glow from inside as they reach the keys
 - Opacity
 - Glow intensity (drives proximity brightness multiplier)
 - Trail length and opacity
@@ -203,7 +210,7 @@ Every preset value is also exposed as a live setting:
 
 **Piano**
 - Range: fit to the piece / all 88 keys
-- Finish: ivory and ebony / dark glass (auto-swaps default key colours on change)
+- Finish: ivory and ebony / dark, lit by notes / frosted glass (auto-swaps default key colours on change)
 - White key colour
 - Black key colour
 - Felt colour

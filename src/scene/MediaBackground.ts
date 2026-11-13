@@ -125,6 +125,9 @@ export class MediaBackground {
     this._recomputeUV();
   }
 
+  /** Also draw on `layer`, so glass can see the media behind it. */
+  enableLayer(layer: number) { this.mesh.layers.enable(layer); }
+
   setVisible(visible: boolean) { this.mesh.visible = visible && this.material.uniforms.hasTex.value > 0; }
 
   /** Keep the video element roughly in sync with the playback clock. */

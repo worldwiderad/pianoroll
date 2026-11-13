@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { MidiTrack } from '../midi/MidiLoader';
 import type { Theme } from '../theme/types';
 import { isBlack } from './Piano';
+import { backdropUniforms } from './Backdrop';
 
 const FIRST_MIDI = 21;
 const KEY_COUNT = 88;
@@ -42,6 +43,9 @@ uniform float bloomMul;
 uniform float shimmer;
 uniform float time;
 uniform float bevel;
+uniform float glass;
+uniform sampler2D tBackdrop;
+uniform vec2 uScreen;
 varying vec2 vUv;
 varying vec2 vSize;
 varying float vBrightness;
@@ -78,6 +82,35 @@ void main() {
   // Subtle sine shimmer along vertical UV — at shimmer=0 this is a no-op.
   float shim = 1.0 + shimmer * sin(time * 3.0 + vUv.y * 6.0);
   vec3 c = lit * max(1.0, vBrightness) * bloomMul * shim;
+
+  if (glass > 0.001) {
+    // Frosted glass: show the blurred background behind this pane, bent a
+    // little near the rim like the edge of a lens.
+    float wpp = max(abs(dFdx(p.x)), 1e-4);          // scene units per screen pixel
+    vec2 en = (q.x > q.y) ? vec2(sign(p.x), 0.0) : vec2(0.0, sign(p.y));
+    float band = 1.0 - smoothstep(0.0, 14.0 * wpp, -d);
+    vec2 bend = -en * band * band * 10.0 / uScreen;
+    vec3 behind = texture2D(tBackdrop, gl_FragCoord.xy / uScreen + bend).rgb;
+    vec3 frost = behind * 0.72 + vec3(0.11);
+    vec3 g = mix(frost, frost * (baseColor * 1.25 + 0.15), 0.58) + baseColor * 0.10;
+    // Light from the top left: a bright rim there, a faint one opposite, and
+    // a darker inner edge on the far side so the pane reads as thick glass.
+    float facing = clamp(dot(en, normalize(vec2(-0.55, 0.85))) * 0.5 + 0.5, 0.0, 1.0);
+    float rimLine = 1.0 - smoothstep(0.0, 1.5 * wpp, -d);
+    float innerBand = (1.0 - smoothstep(1.5 * wpp, 6.0 * wpp, -d)) * (1.0 - rimLine);
+    g += vec3(1.0) * rimLine * mix(0.14, 1.0, facing * facing);
+    g *= 1.0 - innerBand * (1.0 - facing) * 0.28;
+    // Gloss: a soft diagonal sheen from the top left across the pane.
+    vec2 pn = p / max(halfSize, vec2(1.0));
+    float diag = dot(pn, normalize(vec2(-0.45, 0.9)));
+    g += vec3(1.0) * smoothstep(0.1, 1.1, diag) * 0.13;
+    // Light from inside: the leading edge glows as it nears the keys, and the
+    // pane brightens when the note is loud or about to land.
+    float leadG = 1.0 - smoothstep(0.0, 18.0 * wpp, vUv.y * vSize.y);
+    g += baseColor * leadG * 0.4;
+    g += baseColor * max(0.0, vBrightness - 1.0) * 0.8 * bloomMul;
+    c = mix(c, g, glass);
+  }
   gl_FragColor = vec4(c, opacity * alpha);
 }
 `;
@@ -98,6 +131,9 @@ function makeNoteMaterial(color: THREE.Color, opacity: number, theme: Theme, isT
       bloomMul: { value: theme.notes.bloomMultiplier },
       shimmer: { value: isTrail ? 0 : theme.notes.shimmer },
       bevel: { value: isTrail ? 0 : theme.notes.bevel },
+      glass: { value: isTrail ? 0 : theme.notes.glass },
+      tBackdrop: backdropUniforms.tBackdrop,
+      uScreen: backdropUniforms.uScreen,
       time: { value: 0 },
     },
     vertexShader: NOTE_VERT,
@@ -386,6 +422,7 @@ export class NoteRain {
       r.mat.uniforms.bloomMul.value = theme.notes.bloomMultiplier;
       r.mat.uniforms.shimmer.value = theme.notes.shimmer;
       r.mat.uniforms.bevel.value = theme.notes.bevel;
+      r.mat.uniforms.glass.value = theme.notes.glass;
       r.trailMat.uniforms.opacity.value = theme.notes.trailOpacity;
       r.trailMat.uniforms.shape.value = shapeVal;
       r.trailMat.uniforms.cornerRadius.value = theme.notes.cornerRadius;
